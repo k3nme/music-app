@@ -96,7 +96,7 @@ record('Preview shows the hummed notes', detected >= MELODY.length, `${detected}
 const summary = await page.locator('.hum .spacer').first().locator('xpath=preceding-sibling::span[1]').textContent()
 record('Result summarises the take', Boolean(summary && summary.includes('notes')), summary?.trim())
 
-await page.screenshot({ path: 'scripts/overtone-hum-result.png' })
+await page.screenshot({ path: 'scripts/screenshots/overtone-hum-result.png' })
 
 // Swap the instrument — the whole point of the flow.
 await page.locator('.btn', { hasText: 'Sitar' }).click()
@@ -132,7 +132,7 @@ record('Notes match what was sung', got === expected, `${got} vs ${expected} (mi
 record('Project key follows the hummed take', after.key !== '0/minor', after.key)
 record('Clip is a whole number of bars', after.contentBeats % 4 === 0, `${after.contentBeats} beats`)
 
-await page.screenshot({ path: 'scripts/overtone-after-hum.png' })
+await page.screenshot({ path: 'scripts/screenshots/overtone-after-hum.png' })
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '))
 
 await browser.close()

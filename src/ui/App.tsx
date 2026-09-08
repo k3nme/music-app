@@ -10,6 +10,7 @@ import { Arrangement, ClipActions } from './components/Arrangement'
 import { DrumGrid } from './components/DrumGrid'
 import { ExportDialog, FilesDialog, HelpDialog, ShareDialog, Welcome } from './components/Dialogs'
 import { HumStudio } from './components/HumStudio'
+import { IdeasButton, IdeasPanel } from './components/IdeasPanel'
 import { InstrumentPicker } from './components/InstrumentPicker'
 import { Keyboard } from './components/Keyboard'
 import { Mixer } from './components/Mixer'
@@ -17,7 +18,7 @@ import { PianoRoll } from './components/PianoRoll'
 import { TopBar } from './components/TopBar'
 import { Note as NoteIcon, Piano, Sliders } from './icons'
 
-type Dialog = 'files' | 'export' | 'share' | null
+type Dialog = 'files' | 'export' | 'share' | 'ideas' | null
 
 export function App() {
   const project = useStore((s) => s.project)
@@ -124,6 +125,9 @@ export function App() {
         case 'KeyT':
           if (letterShortcutsLive) { e.preventDefault(); state.setUI({ instrumentPickerFor: 'new' }) }
           break
+        case 'KeyI':
+          if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'ideas' ? null : 'ideas')) }
+          break
         case 'KeyL':
           if (!letterShortcutsLive) break
           state.setUI({ loopEnabled: !state.loopEnabled })
@@ -214,6 +218,7 @@ export function App() {
             <div className="spacer" />
             {clip && <span style={{ color: 'var(--faint)', fontSize: 11.5 }}>{clip.name}</span>}
             <ClipActions />
+            <IdeasButton onClick={() => setDialog('ideas')} />
           </div>
 
           <div className="editor-body" style={{ position: 'relative' }}>
@@ -242,6 +247,7 @@ export function App() {
       {dialog === 'files' && <FilesDialog onClose={() => setDialog(null)} />}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
       {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
+      {dialog === 'ideas' && <IdeasPanel onClose={() => setDialog(null)} />}
 
       {status && <div className={`toast ${status.tone}`}>{status.message}</div>}
     </div>

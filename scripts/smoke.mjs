@@ -161,6 +161,31 @@ await page.waitForSelector('.hum-orb')
 record('Hum studio opens', true)
 await page.locator('.sheet-foot .btn', { hasText: 'Cancel' }).click()
 
+// ideas panel
+await page.locator('.btn', { hasText: 'Ideas' }).click()
+await page.waitForSelector('.picker-grid .inst-card')
+const ideaCount = await page.locator('.picker-grid .inst-card').count()
+record('Ideas panel offers drum patterns', ideaCount >= 4, `${ideaCount} suggestions`)
+await page.locator('.fam', { hasText: 'Chords' }).click()
+await page.waitForTimeout(250)
+const chordTitle = await page.locator('.picker-grid .inst-name').first().textContent()
+record('Chord suggestions are fitted to the song', /^[A-G]/.test(chordTitle ?? ''), chordTitle ?? '')
+
+const tracksBefore = await page.evaluate(() => window.__overtone.useStore.getState().project.tracks.length)
+await page.locator('.picker-grid .inst-card').first().click()
+await page.waitForTimeout(300)
+const afterIdea = await page.evaluate(() => {
+  const s = window.__overtone.useStore.getState()
+  return { tracks: s.project.tracks.length, canUndo: s.past.length > 0 }
+})
+record('Applying a suggestion adds a part', afterIdea.tracks === tracksBefore + 1,
+  `${tracksBefore} -> ${afterIdea.tracks}`)
+record('Suggestions are undoable', afterIdea.canUndo)
+await page.keyboard.press('Control+z')
+await page.waitForTimeout(200)
+const undone = await page.evaluate(() => window.__overtone.useStore.getState().project.tracks.length)
+record('Undo removes the suggested part', undone === tracksBefore, `back to ${undone}`)
+
 // share round-trip
 const share = await page.evaluate(async () => {
   const { useStore } = window.__overtone
@@ -186,10 +211,10 @@ const midi = await page.evaluate(async () => {
 })
 record('MIDI export produces a valid file', midi.header === 'MThd' && midi.size > 200, `${midi.size} bytes`)
 
-await page.screenshot({ path: 'scripts/overtone-studio.png' })
+await page.screenshot({ path: 'scripts/screenshots/overtone-studio.png' })
 await page.locator('.hum-btn').click()
 await page.waitForSelector('.hum-orb')
-await page.screenshot({ path: 'scripts/overtone-hum.png' })
+await page.screenshot({ path: 'scripts/screenshots/overtone-hum.png' })
 
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 
