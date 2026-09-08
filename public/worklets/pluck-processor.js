@@ -18,13 +18,21 @@
 const MIN_FREQ = 20
 
 class PluckProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super()
     /** @type {Array<object>} */
     this.voices = []
     /** @type {Array<object>} */
     this.pending = []
     this.maxVoices = 24
+    // Offline rendering can't use the port: messages posted in the same task
+    // as startRendering() are never delivered. Those renders hand the whole
+    // schedule over here instead, at construction time.
+    const preset = options && options.processorOptions
+    if (preset) {
+      if (Array.isArray(preset.notes)) this.pending.push(...preset.notes)
+      if (preset.maxVoices) this.maxVoices = preset.maxVoices
+    }
     this.port.onmessage = (e) => {
       const msg = e.data
       if (msg.type === 'note') {

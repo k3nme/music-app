@@ -492,6 +492,28 @@ export class AudioEngine {
     inst.play(midi, this.ctx.currentTime + 0.005, durationSec, velocity)
   }
 
+  /** Schedule a note at an absolute AudioContext time — used by previews. */
+  playNoteAt(trackId: string, midi: number, time: number, durationSec: number, velocity = 0.85) {
+    const inst = this.instruments.get(trackId)
+    if (!inst || !this.ctx) return
+    inst.play(midi, Math.max(time, this.ctx.currentTime), durationSec, velocity)
+  }
+
+  /** A single metronome click, independent of the transport. */
+  scheduleClick(time: number, accent = false) {
+    if (!this.ctx || !this.master) return
+    const osc = this.ctx.createOscillator()
+    osc.type = 'square'
+    osc.frequency.value = accent ? 1600 : 1050
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(0.0001, time)
+    g.gain.linearRampToValueAtTime(accent ? 0.16 : 0.09, time + 0.001)
+    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.045)
+    osc.connect(g).connect(this.master.gain)
+    osc.start(time)
+    osc.stop(time + 0.06)
+  }
+
   // --- scheduling ----------------------------------------------------------
 
   private tick() {

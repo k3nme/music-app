@@ -32,6 +32,11 @@ export interface InstrumentInstance {
   play(midi: number, when: number, durationSec: number, velocity: number): void
   /** Silence everything, e.g. on transport stop or panic. */
   allNotesOff(when: number): void
+  /**
+   * Offline rendering only: commit anything the instrument buffered while the
+   * schedule was being built. Live instruments don't need it.
+   */
+  finalize?(): void
   dispose(): void
 }
 

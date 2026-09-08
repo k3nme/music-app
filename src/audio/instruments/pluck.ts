@@ -103,7 +103,7 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
   strings.gain.value = 1
   if (p.body.length > 0) {
     const dry = ctx.createGain()
-    dry.gain.value = 1 - p.bodyMix * 0.55
+    dry.gain.value = 1 - p.bodyMix * 0.6
     strings.connect(dry).connect(chainHead)
     for (const res of p.body) {
       const f = ctx.createBiquadFilter()
@@ -112,7 +112,9 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
       f.Q.value = res.q
       f.gain.value = res.gain
       const g = ctx.createGain()
-      g.gain.value = p.bodyMix / Math.max(1, p.body.length) + 0.35
+      // Split the wet level across the resonators so the body stays at unity
+      // however many peaks an instrument defines.
+      g.gain.value = (p.bodyMix * 0.9) / Math.max(1, p.body.length)
       strings.connect(f).connect(g).connect(chainHead)
       nodes.push(f, g)
     }
@@ -121,13 +123,26 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
     strings.connect(chainHead)
   }
 
-  const node = new AudioWorkletNode(ctx, 'pluck-processor', {
-    numberOfInputs: 0,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-  })
-  node.connect(strings)
-  node.port.postMessage({ type: 'config', maxVoices: Math.max(4, preset.polyphony) })
+  // An OfflineAudioContext renders faster than the main thread can deliver
+  // port messages, so offline instruments collect their notes and hand the
+  // whole schedule to the processor when `finalize()` builds the node.
+  const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext
+  const maxVoices = Math.max(4, preset.polyphony)
+  const queued: unknown[] = []
+  let node: AudioWorkletNode | null = null
+
+  const buildNode = (notes: unknown[]) => {
+    const created = new AudioWorkletNode(ctx, 'pluck-processor', {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      processorOptions: { maxVoices, notes },
+    })
+    created.connect(strings)
+    return created
+  }
+
+  if (!offline) node = buildNode([])
 
   const workletParams = {
     sustain: p.sustain, damping: p.damping, decayKeyScale: p.decayKeyScale,
@@ -140,10 +155,14 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
 
   function send(midi: number, when: number, velocity: number, releaseAt: number | null): number {
     const id = ++seq
-    node.port.postMessage({
+    const message = {
       type: 'note', id, midi, freq: midiToFreq(midi), when, velocity,
-      releaseAt: releaseAt ?? Infinity, params: workletParams,
-    })
+      // Infinity doesn't survive structured cloning into processorOptions,
+      // so an open-ended note is expressed as "very far away".
+      releaseAt: releaseAt ?? Number.MAX_SAFE_INTEGER, params: workletParams,
+    }
+    if (node) node.port.postMessage(message)
+    else queued.push(message)
     return id
   }
 
@@ -154,7 +173,7 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
       const id = send(midi, when, velocity, null)
       return {
         midi,
-        release: (t: number) => node.port.postMessage({ type: 'release', id, when: t }),
+        release: (t: number) => node?.port.postMessage({ type: 'release', id, when: t }),
       } satisfies NoteHandle
     },
     play(midi, when, durationSec, velocity) {
@@ -162,11 +181,16 @@ export function createPluck(ctx: BaseAudioContext, preset: PresetBase): Instrume
       send(midi, when, velocity, when + Math.max(0.04, durationSec))
     },
     allNotesOff(when) {
-      node.port.postMessage({ type: 'allOff', when })
+      node?.port.postMessage({ type: 'allOff', when })
+    },
+    finalize() {
+      if (node || !offline) return
+      node = buildNode(queued)
+      queued.length = 0
     },
     dispose() {
-      try { node.port.postMessage({ type: 'allOff', when: ctx.currentTime }) } catch { /* noop */ }
-      try { node.disconnect() } catch { /* noop */ }
+      try { node?.port.postMessage({ type: 'allOff', when: ctx.currentTime }) } catch { /* noop */ }
+      try { node?.disconnect() } catch { /* noop */ }
       for (const n of nodes) { try { n.disconnect() } catch { /* noop */ } }
       try { output.disconnect() } catch { /* noop */ }
     },
