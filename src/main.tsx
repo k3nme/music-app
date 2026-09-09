@@ -18,6 +18,7 @@ if (import.meta.env.DEV) {
     import('./music/project'),
     import('./audio/workers'),
     import('./lib/wav'),
+    import('./lib/bundle'),
   ]).then((modules) => {
     Object.assign(window, { __overtone: Object.assign({}, ...modules) })
   })

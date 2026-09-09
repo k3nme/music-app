@@ -189,6 +189,12 @@ export async function createSample(
   return { meta, buffer }
 }
 
+/** Store a sample under an id chosen by the caller — used when opening a bundle. */
+export async function putSample(meta: SampleMeta, blob: Blob): Promise<boolean> {
+  rememberSample(meta)
+  return persist(meta, blob)
+}
+
 async function persist(meta: SampleMeta, blob: Blob): Promise<boolean> {
   const db = await openDatabase()
   if (!db) return false

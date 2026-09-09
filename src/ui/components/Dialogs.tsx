@@ -6,7 +6,10 @@ import {
   type ProjectSummary,
 } from '../../lib/persistence'
 import { copyToClipboard, createShareLink } from '../../lib/share'
-import { formatBytes, knownSamples, deleteSample, storageUsage } from '../../lib/samples'
+import { formatBytes, knownSamples, deleteSample, putSample, storageUsage } from '../../lib/samples'
+import { bundleFilename, createBundle, installBundleSamples, isBundle, readBundle } from '../../lib/bundle'
+import { projectSampleIds } from '../../music/project'
+import { triggerDownload } from '../../lib/persistence'
 import { contentEndBeat } from '../../music/project'
 import { useStore } from '../../state/store'
 import { Close, Download, Share, Trash } from '../icons'
@@ -64,7 +67,19 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
       onClose={onClose}
       foot={
         <>
-          <button className="btn" onClick={() => fileRef.current?.click()}>Import file…</button>
+          <button className="btn" onClick={() => fileRef.current?.click()}>Open file…</button>
+          <button
+            className="btn"
+            onClick={async () => {
+              const current = useStore.getState().project
+              const bundle = await createBundle(current)
+              triggerDownload(bundle, bundleFilename(current))
+              flash(`Bundle saved — ${formatBytes(bundle.size)}, audio included`, 'good')
+            }}
+            title="One file containing the arrangement and every sample it uses"
+          >
+            Download bundle
+          </button>
           <div className="spacer" />
           <button className="btn" onClick={() => { newProject(); onClose() }}>New project</button>
           <button
@@ -81,14 +96,25 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
       <input
         ref={fileRef}
         type="file"
-        accept=".json,application/json"
+        accept=".json,.overtone,application/json,application/octet-stream"
         style={{ display: 'none' }}
         onChange={async (e) => {
           const file = e.target.files?.[0]
+          e.target.value = ''
           if (!file) return
           try {
-            setProject(await readProjectFile(file), { resetHistory: true })
-            flash('Project imported', 'good')
+            // Bundles carry their own audio; a bare .json is the arrangement only.
+            const head = await file.slice(0, 16).arrayBuffer()
+            if (isBundle(head)) {
+              const bundle = await readBundle(file)
+              await installBundleSamples(bundle, putSample)
+              engine.stop(0)
+              setProject(bundle.project, { resetHistory: true })
+              flash(`Opened “${bundle.project.name}” with ${bundle.samples.length} audio file(s)`, 'good')
+            } else {
+              setProject(await readProjectFile(file), { resetHistory: true })
+              flash('Project opened', 'good')
+            }
             onClose()
           } catch (err) {
             flash(err instanceof Error ? err.message : 'Could not read that file', 'warn')
@@ -126,7 +152,11 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
                 onClose()
               }}
             >Open</button>
-            <button className="btn icon" title="Download" onClick={() => { const p = loadProject(entry.id); if (p) downloadProject(p) }}>
+            <button
+              className="btn icon"
+              title="Download the arrangement as JSON"
+              onClick={() => { const p = loadProject(entry.id); if (p) downloadProject(p) }}
+            >
               <Download width={13} height={13} />
             </button>
             <button
@@ -323,9 +353,19 @@ export function ShareDialog({ onClose }: { onClose(): void }) {
       />
       <div style={{ marginTop: 10, fontSize: 11.5, color: tooLong ? 'var(--warn)' : 'var(--faint)' }}>
         {tooLong
-          ? 'This link is very long and some apps will truncate it. Export the project file instead for big arrangements.'
+          ? 'This link is very long and some apps will truncate it. Send a bundle instead for big arrangements.'
           : `${link ? Math.round(link.length / 1024) : 0} KB. Anyone who opens it gets an editable copy.`}
       </div>
+      {projectSampleIds(project).length > 0 && (
+        <div style={{
+          marginTop: 10, padding: '9px 11px', borderRadius: 8, fontSize: 11.5, lineHeight: 1.55,
+          background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.35)', color: '#ffe4ab',
+        }}>
+          This project uses {projectSampleIds(project).length} audio file(s). A link can't carry
+          audio — whoever opens it gets the arrangement with the audio clips greyed out. Use
+          <b> Projects → Download bundle</b> to send the whole thing.
+        </div>
+      )}
     </Sheet>
   )
 }
@@ -339,6 +379,7 @@ const SHORTCUTS: [string, string][] = [
   ['T', 'Add an instrument'],
   ['I', 'Ideas — chords, bass, drums'],
   ['M', 'Mashup Lab'],
+  ['R', 'Record audio onto a track'],
   ['L', 'Toggle loop'],
   ['N', 'Metronome'],
   ['⌘/Ctrl + Z', 'Undo'],

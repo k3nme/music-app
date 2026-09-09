@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { engine, DEFAULT_CHANNEL } from '../../audio/engine'
 import { analyseRecording, type AnalysisResult } from '../../audio/analysis'
+import type { AudioAnalysis } from '../../audio/analysis/audio'
+import { analyseAudioInWorker } from '../../audio/workers'
+import { chordNotes } from '../../music/theory'
 import { ALL_PRESETS, getPreset, isDrumPreset, kitPieces } from '../../audio/instruments'
 import { recorder } from '../../audio/recorder'
-import { createClip, type Note } from '../../music/project'
+import { createClip, createNote, type Note } from '../../music/project'
 import { GRID_OPTIONS, notesFromAnalysis, notesFromHits, roundToBars } from '../../music/quantize'
 import { detectKey, type KeyGuess } from '../../music/key'
 import { midiToName, NOTE_NAMES, SCALES } from '../../music/theory'
@@ -11,7 +14,7 @@ import { useStore } from '../../state/store'
 import { Close, Mic, Play, Stop, Wand } from '../icons'
 
 type Stage = 'setup' | 'recording' | 'analysing' | 'result'
-type Mode = 'melody' | 'beat'
+type Mode = 'melody' | 'beat' | 'chords'
 
 const PREVIEW_TRACK = '__hum_preview__'
 const MAX_SECONDS = 40
@@ -19,6 +22,7 @@ const MAX_SECONDS = 40
 /** Instruments offered as quick picks, by mode. */
 const QUICK_MELODIC = ['grand-piano', 'rhodes', 'steel-guitar', 'sitar', 'supersaw', 'cello', 'bansuri', 'marimba', 'warm-pad', 'bass-guitar']
 const QUICK_DRUMS = ['kit-808', 'kit-909', 'kit-acoustic', 'kit-lofi', 'kit-tabla', 'kit-latin']
+const QUICK_CHORDS = ['rhodes', 'warm-pad', 'grand-piano', 'nylon-guitar', 'drawbar-organ', 'string-ensemble']
 
 export function HumStudio() {
   const project = useStore((s) => s.project)
@@ -32,6 +36,8 @@ export function HumStudio() {
   const [elapsed, setElapsed] = useState(0)
   const [progress, setProgress] = useState(0)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
+  /** Chord mode uses the full audio analyser rather than the pitch tracker. */
+  const [chordAnalysis, setChordAnalysis] = useState<AudioAnalysis | null>(null)
   const [clickTrack, setClickTrack] = useState(true)
 
   // Quantisation controls, live-applied to the preview.
@@ -47,15 +53,26 @@ export function HumStudio() {
   const previewTimers = useRef<number[]>([])
 
   const preset = getPreset(presetId)
-  const targetBpm = useDetectedTempo && analysis?.tempo ? analysis.tempo : project.bpm
+  const detectedTempo = mode === 'chords'
+    ? (chordAnalysis && chordAnalysis.beat.confidence > 0.2 ? Math.round(chordAnalysis.beat.bpm) : null)
+    : (analysis?.tempo ?? null)
+  const targetBpm = useDetectedTempo && detectedTempo ? detectedTempo : project.bpm
 
   /** What key the take itself is in — so snapping helps instead of transposing. */
   const detectedKey: KeyGuess | null = useMemo(() => {
+    if (mode === 'chords') {
+      if (!chordAnalysis) return null
+      return {
+        root: chordAnalysis.key.root,
+        scale: chordAnalysis.key.mode === 'major' ? 'major' : 'minor',
+        confidence: chordAnalysis.key.confidence,
+      }
+    }
     if (!analysis || mode === 'beat') return null
     return detectKey(analysis.notes.map((n) => ({
       midi: n.midi, duration: n.endSec - n.startSec, velocity: n.velocity,
     })))
-  }, [analysis, mode])
+  }, [analysis, chordAnalysis, mode])
 
   const targetKey = useDetectedKey && detectedKey
     ? { root: detectedKey.root, scale: detectedKey.scale }
@@ -64,6 +81,20 @@ export function HumStudio() {
   // --- derived notes -------------------------------------------------------
 
   const notes: Note[] = useMemo(() => {
+    if (mode === 'chords') {
+      if (!chordAnalysis) return []
+      const beatsPerSecond = targetBpm / 60
+      const offset = chordAnalysis.chords[0]?.timeSec ?? 0
+      const snapTo = (beats: number) => (grid > 0 ? Math.round(beats / grid) * grid : beats)
+      return chordAnalysis.chords.flatMap((chord) => {
+        const start = Math.max(0, snapTo((chord.timeSec - offset) * beatsPerSecond))
+        const duration = Math.max(grid || 0.5, snapTo(chord.durationSec * beatsPerSecond))
+        // Voiced in first inversion around middle C, which keeps a progression
+        // from leaping around as the roots move.
+        return chordNotes(48 + chord.root, chord.quality === 'min' ? 'min' : 'maj', 1)
+          .map((midi) => createNote(midi, start, duration - 0.05, 0.6 + chord.confidence * 0.3))
+      })
+    }
     if (!analysis) return []
     if (mode === 'beat') {
       const pieces = kitPieces(preset)
@@ -84,7 +115,7 @@ export function HumStudio() {
       root: targetKey.root, scale: targetKey.scale,
       fitRange: preset.range, trimStart: true,
     })
-  }, [analysis, mode, grid, strength, snapScale, targetKey, preset, targetBpm])
+  }, [analysis, chordAnalysis, mode, grid, strength, snapScale, targetKey, preset, targetBpm])
 
   const lengthBeats = useMemo(() => {
     if (notes.length === 0) return project.beatsPerBar * 2
@@ -186,6 +217,22 @@ export function HumStudio() {
     }
 
     try {
+      if (mode === 'chords') {
+        const result = await analyseAudioInWorker(
+          [pcm], recorder.sampleRate, ({ fraction }) => setProgress(fraction),
+        )
+        setChordAnalysis(result)
+        if (result.chords.length === 0) {
+          setError('No chords found. Try strumming or holding each chord for a beat or two.')
+          setStage('setup')
+          return
+        }
+        setUseDetectedTempo(false)
+        setUseDetectedKey(project.clips.length === 0 && result.key.confidence > 0.25)
+        setStage('result')
+        return
+      }
+
       const result = await analyseRecording(pcm, recorder.sampleRate, undefined, setProgress)
       setAnalysis(result)
       if (result.peak < 0.02) {
@@ -231,7 +278,7 @@ export function HumStudio() {
 
     const trackId = addTrack(presetId, preset.name)
     const clip = createClip(trackId, {
-      name: mode === 'beat' ? 'Beatbox' : 'Hummed idea',
+      name: mode === 'beat' ? 'Beatbox' : mode === 'chords' ? 'Chords' : 'Hummed idea',
       startBeat: 0,
       contentBeats: lengthBeats,
       lengthBeats,
@@ -252,7 +299,7 @@ export function HumStudio() {
   }
 
   const close = () => { stopPreview(); setUI({ humOpen: false }) }
-  const quickPicks = mode === 'beat' ? QUICK_DRUMS : QUICK_MELODIC
+  const quickPicks = mode === 'beat' ? QUICK_DRUMS : mode === 'chords' ? QUICK_CHORDS : QUICK_MELODIC
 
   return (
     <div className="overlay" onPointerDown={close}>
@@ -261,7 +308,8 @@ export function HumStudio() {
           <div>
             <div className="sheet-title">Hum it, hear it on anything</div>
             <div className="sheet-sub">
-              Sing, hum, whistle or beatbox. Overtone works out the notes and plays them on any instrument.
+              Sing, hum, whistle, beatbox, or play chords on any instrument. Overtone works out the
+              notes and plays them back on whatever you like.
             </div>
           </div>
           <div className="spacer" />
@@ -288,6 +336,14 @@ export function HumStudio() {
                   <button className={`btn ${mode === 'beat' ? 'on' : ''}`} onClick={() => { setMode('beat'); setPresetId('kit-808') }} disabled={stage === 'recording'}>
                     Beatboxing a rhythm
                   </button>
+                  <button
+                    className={`btn ${mode === 'chords' ? 'on' : ''}`}
+                    onClick={() => { setMode('chords'); setPresetId('rhodes') }}
+                    disabled={stage === 'recording'}
+                    title="Play chords on any instrument and Overtone will work out the progression"
+                  >
+                    Playing chords
+                  </button>
                   <div className="spacer" />
                   <label className="chip" style={{ cursor: 'pointer' }}>
                     <input type="checkbox" checked={clickTrack} onChange={(e) => setClickTrack(e.target.checked)} disabled={stage === 'recording'} />
@@ -310,7 +366,11 @@ export function HumStudio() {
                   {stage === 'recording' ? (
                     <>Recording — <span className="mono">{elapsed.toFixed(1)}s</span> · click the button when you're done</>
                   ) : (
-                    <>Click the mic and hum. A steady “doo” or “aah” tracks best — and it's fine to be a bit off, you can tidy it up after.</>
+                    mode === 'chords'
+                      ? <>Play or strum chords into the mic — guitar, piano, anything. Hold each one for a beat or two so it can be read.</>
+                      : mode === 'beat'
+                        ? <>Beatbox or tap a rhythm. Low sounds become kicks, mid ones snares, sharp ones hats.</>
+                        : <>Click the mic and hum. A steady “doo” or “aah” tracks best — and it's fine to be a bit off, you can tidy it up after.</>
                   )}
                 </div>
               </>
@@ -326,7 +386,7 @@ export function HumStudio() {
               </div>
             )}
 
-            {stage === 'result' && analysis && (
+            {stage === 'result' && (analysis || chordAnalysis) && (
               <>
                 <NotePreview notes={notes} lengthBeats={lengthBeats} hue={preset.hue} />
 
@@ -336,7 +396,9 @@ export function HumStudio() {
                     {previewing ? 'Stop' : 'Hear it'}
                   </button>
                   <span style={{ color: 'var(--dim)', fontSize: 12.5 }}>
-                    {notes.length} notes
+                    {mode === 'chords' && chordAnalysis
+                      ? `${chordAnalysis.chords.length} chords`
+                      : `${notes.length} notes`}
                     {mode === 'melody' && notes.length > 0 && (
                       <> · {midiToName(Math.min(...notes.map((n) => n.midi)))}–{midiToName(Math.max(...notes.map((n) => n.midi)))}</>
                     )}
@@ -350,10 +412,10 @@ export function HumStudio() {
                       Sounds like {NOTE_NAMES[detectedKey.root]} {SCALES[detectedKey.scale].label.toLowerCase()} — use it?
                     </label>
                   )}
-                  {analysis.tempo && Math.abs(analysis.tempo - project.bpm) > 1 && (
+                  {detectedTempo && Math.abs(detectedTempo - project.bpm) > 1 && (
                     <label className="chip" style={{ cursor: 'pointer' }}>
                       <input type="checkbox" checked={useDetectedTempo} onChange={(e) => setUseDetectedTempo(e.target.checked)} />
-                      You hummed around {analysis.tempo} BPM — use it?
+                      That was around {detectedTempo} BPM — use it?
                     </label>
                   )}
                 </div>
@@ -419,7 +481,10 @@ export function HumStudio() {
 
         <div className="sheet-foot">
           {stage === 'result' && (
-            <button className="btn" onClick={() => { stopPreview(); setStage('setup'); setAnalysis(null) }}>
+            <button
+              className="btn"
+              onClick={() => { stopPreview(); setStage('setup'); setAnalysis(null); setChordAnalysis(null) }}
+            >
               Record again
             </button>
           )}

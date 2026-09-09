@@ -351,10 +351,17 @@ function detectTuning(signal: Float32Array): number {
  * sitting between two semitones (noise, or an inharmonic partial) barely
  * counts at all.
  */
-function chromagram(signal: Float32Array, tuningCents: number): { chroma: Float32Array; frames: number; fps: number } {
+function chromagram(signal: Float32Array, tuningCents: number): {
+  chroma: Float32Array; bass: Float32Array; frames: number; fps: number
+} {
   const bins = HARMONIC_FFT / 2 + 1
   const chromaFrames: Float32Array[] = []
+  const bassFrames: Float32Array[] = []
   const reference = 440 * Math.pow(2, tuningCents / 1200)
+  // The lowest sounding note names the chord far more reliably than the note
+  // set does: A minor and F major share two of their three notes, and only the
+  // bass tells them apart.
+  const bassCeiling = 260
 
   // Precompute each bin's pitch class and weight — this is per-file constant.
   const pitchClass = new Int8Array(bins)
@@ -373,22 +380,37 @@ function chromagram(signal: Float32Array, tuningCents: number): { chroma: Float3
     weight[k] = closeness * band
   }
 
+  const bassBin = Math.floor((bassCeiling * HARMONIC_FFT) / AUDIO_ANALYSIS_RATE)
+
   forEachFrame(signal, HARMONIC_FFT, HARMONIC_HOP, (re, im) => {
     const frame = new Float32Array(12)
+    const bassFrame = new Float32Array(12)
     for (let k = 1; k < bins; k++) {
       const pc = pitchClass[k]
       if (pc < 0) continue
-      frame[pc] += Math.hypot(re[k], im[k]) * weight[k]
+      const magnitude = Math.hypot(re[k], im[k]) * weight[k]
+      frame[pc] += magnitude
+      if (k <= bassBin) bassFrame[pc] += magnitude
     }
-    let total = 0
-    for (let i = 0; i < 12; i++) total += frame[i]
-    if (total > 1e-9) for (let i = 0; i < 12; i++) frame[i] /= total
+    const normalise = (target: Float32Array) => {
+      let total = 0
+      for (let i = 0; i < 12; i++) total += target[i]
+      if (total > 1e-9) for (let i = 0; i < 12; i++) target[i] /= total
+    }
+    normalise(frame)
+    normalise(bassFrame)
     chromaFrames.push(frame)
+    bassFrames.push(bassFrame)
   })
 
   const flat = new Float32Array(chromaFrames.length * 12)
+  const flatBass = new Float32Array(bassFrames.length * 12)
   chromaFrames.forEach((frame, i) => flat.set(frame, i * 12))
-  return { chroma: flat, frames: chromaFrames.length, fps: AUDIO_ANALYSIS_RATE / HARMONIC_HOP }
+  bassFrames.forEach((frame, i) => flatBass.set(frame, i * 12))
+  return {
+    chroma: flat, bass: flatBass,
+    frames: chromaFrames.length, fps: AUDIO_ANALYSIS_RATE / HARMONIC_HOP,
+  }
 }
 
 // Krumhansl-Kessler key profiles: how much each scale degree is used in a key.
@@ -464,7 +486,7 @@ function detectKeyFromChroma(chroma: Float32Array, frames: number, tuningCents: 
  * and a majority filter removes the flicker that unsmoothed matching produces.
  */
 function detectChords(
-  chroma: Float32Array, frames: number, chromaFps: number, grid: BeatGrid,
+  chroma: Float32Array, bass: Float32Array, frames: number, chromaFps: number, grid: BeatGrid,
 ): ChordEvent[] {
   if (frames === 0) return []
   const beatSec = 60 / grid.bpm
@@ -486,15 +508,25 @@ function detectChords(
     const start = Math.floor(grid.offsetSec * chromaFps + beat * framesPerBeat)
     const end = Math.min(frames, Math.floor(start + framesPerBeat))
     const average = new Array(12).fill(0)
+    const bassAverage = new Array(12).fill(0)
     for (let f = Math.max(0, start); f < end; f++) {
-      for (let i = 0; i < 12; i++) average[i] += chroma[f * 12 + i]
+      for (let i = 0; i < 12; i++) {
+        average[i] += chroma[f * 12 + i]
+        bassAverage[i] += bass[f * 12 + i]
+      }
     }
     const count = Math.max(1, end - Math.max(0, start))
-    for (let i = 0; i < 12; i++) average[i] /= count
+    for (let i = 0; i < 12; i++) {
+      average[i] /= count
+      bassAverage[i] /= count
+    }
+    const bassPeak = Math.max(...bassAverage)
 
     let best = { root: 0, quality: 'maj' as 'maj' | 'min', score: -2 }
     for (const template of templates) {
-      const score = correlate(average, template.mask)
+      // Template fit, plus a bonus when the bass agrees with the root.
+      const rootInBass = bassPeak > 1e-9 ? bassAverage[template.root] / bassPeak : 0
+      const score = correlate(average, template.mask) + rootInBass * 0.35
       if (score > best.score) best = { root: template.root, quality: template.quality, score }
     }
     raw.push({ root: best.root, quality: best.quality, confidence: Math.max(0, best.score) })
@@ -587,11 +619,11 @@ export function analyseAudio(
   const tuningCents = detectTuning(analysisSignal)
 
   onProgress?.(0.6, 'Working out the key')
-  const { chroma, frames, fps: chromaFps } = chromagram(analysisSignal, tuningCents)
+  const { chroma, bass, frames, fps: chromaFps } = chromagram(analysisSignal, tuningCents)
   const key = detectKeyFromChroma(chroma, frames, tuningCents)
 
   onProgress?.(0.85, 'Following the chords')
-  const chords = detectChords(chroma, frames, chromaFps, grid)
+  const chords = detectChords(chroma, bass, frames, chromaFps, grid)
 
   onProgress?.(0.95, 'Drawing the waveform')
   const peaks = computePeaks(mono)

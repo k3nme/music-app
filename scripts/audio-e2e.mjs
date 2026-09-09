@@ -232,6 +232,40 @@ record('Separating from the inspector adds four stem tracks',
   afterSplit.tracks.join(', '))
 record('Stem tracks are audio tracks', afterSplit.allAudio)
 
+// --- project bundles -------------------------------------------------------
+const bundle = await page.evaluate(async () => {
+  const { createBundle, readBundle, useStore, projectSampleIds } = window.__overtone
+  const project = useStore.getState().project
+  const blob = await createBundle(project)
+  const opened = await readBundle(blob)
+  const originalIds = projectSampleIds(project)
+  return {
+    bytes: blob.size,
+    name: opened.project.name,
+    tracks: opened.project.tracks.length,
+    audioClips: opened.project.audioClips.length,
+    samples: opened.samples.length,
+    idsMatch: opened.samples.every((s) => originalIds.includes(s.meta.id)),
+    audioBytes: opened.samples.reduce((sum, s) => sum + s.blob.size, 0),
+  }
+})
+record('A bundle round-trips the project with its audio',
+  bundle.tracks === 5 && bundle.audioClips === 5 && bundle.samples === 5 && bundle.idsMatch,
+  `${bundle.samples} samples, ${(bundle.bytes / 1024 / 1024).toFixed(1)} MB`)
+record('Bundled audio is the actual audio, not a reference',
+  bundle.audioBytes > 100000, `${(bundle.audioBytes / 1024 / 1024).toFixed(1)} MB of audio`)
+
+const notBundle = await page.evaluate(async () => {
+  const { readBundle } = window.__overtone
+  try {
+    await readBundle(new Blob(['{"just":"json"}']))
+    return 'accepted'
+  } catch (error) {
+    return error.message
+  }
+})
+record('A non-bundle file is rejected clearly', /not an Overtone bundle/.test(notBundle), notBundle)
+
 await page.screenshot({ path: 'scripts/screenshots/audio-daw.png' })
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '))
 

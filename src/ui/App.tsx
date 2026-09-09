@@ -154,6 +154,12 @@ export function App() {
         case 'KeyM':
           if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'mashup' ? null : 'mashup')) }
           break
+        case 'KeyR':
+          if (letterShortcutsLive) {
+            e.preventDefault()
+            document.querySelector<HTMLButtonElement>('.transport .btn.icon[aria-pressed]')?.click()
+          }
+          break
         case 'KeyL':
           if (!letterShortcutsLive) break
           state.setUI({ loopEnabled: !state.loopEnabled })

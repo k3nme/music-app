@@ -4,6 +4,7 @@ import { formatPosition } from '../../music/project'
 import { NOTE_NAMES, SCALES, type ScaleId } from '../../music/theory'
 import { useStore } from '../../state/store'
 import { usePlayhead } from '../hooks'
+import { RecordButton } from './RecordButton'
 import {
   Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo, Share, Stop, Undo,
 } from '../icons'
@@ -90,6 +91,7 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
             <rect x="5" y="6" width="2.4" height="12" rx="1" /><path d="M20 6v12L9.5 12z" />
           </svg>
         </button>
+        <RecordButton />
         <div className="position mono">{formatPosition(beat, project.beatsPerBar)}</div>
         <button
           className={`btn icon ${loopOn ? 'on' : ''}`}
