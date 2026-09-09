@@ -7,8 +7,13 @@ import {
   buildChannel, buildMaster, type MasterChain,
 } from '../audio/engine'
 import { createInstrument, getPreset, initPluck } from '../audio/instruments'
-import { audibleTrackIds, contentEndBeat, type Project } from '../music/project'
+import {
+  audibleTrackIds, audioClipLengthBeats, audioClipSpeed, contentEndBeat, type Project,
+} from '../music/project'
+import { bufferToChannels, channelsToBuffer, getSampleBuffer, getWarped, warpKey } from './samples'
+import { warp } from '../audio/spectral/vocoder'
 import { safeName, triggerDownload } from './persistence'
+import { encodeWavFromBuffer } from './wav'
 
 // ---------------------------------------------------------------------------
 // WAV
@@ -45,9 +50,12 @@ export async function renderProject(project: Project, options: RenderOptions = {
   const soloed = project.tracks.some((t) => t.soloed)
 
   const instruments = new Map<string, ReturnType<typeof createInstrument>>()
+  const channels = new Map<string, ReturnType<typeof buildChannel>>()
   for (const track of project.tracks) {
     const muted = track.muted || (soloed && !track.soloed)
     const channel = buildChannel(ctx, master, { ...track.channel, muted })
+    channels.set(track.id, channel)
+    if (track.kind === 'audio') continue
     const instrument = createInstrument(ctx, getPreset(track.presetId))
     instrument.output.connect(channel.input)
     instruments.set(track.id, instrument)
@@ -80,6 +88,71 @@ export async function renderProject(project: Project, options: RenderOptions = {
     }
   }
 
+  // --- audio clips --------------------------------------------------------
+  for (const clip of project.audioClips ?? []) {
+    if (!audible.has(clip.trackId)) continue
+    const channel = channels.get(clip.trackId)
+    const raw = getSampleBuffer(clip.sampleId)
+    if (!channel || !raw) continue
+
+    const lengthBeats = audioClipLengthBeats(clip, project.bpm)
+    const clipStart = clip.startBeat
+    if (lengthBeats <= 0 || clipStart >= endBeat || clipStart + lengthBeats <= startBeat) continue
+
+    const speed = audioClipSpeed(clip, project.bpm)
+    let source = raw
+    if (clip.reverse) {
+      source = channelsToBuffer(ctx, bufferToChannels(raw).map((data) => {
+        const out = new Float32Array(data.length)
+        for (let i = 0; i < data.length; i++) out[i] = data[data.length - 1 - i]
+        return out
+      }), raw.sampleRate)
+    }
+
+    const wantsWarp = Math.abs(clip.pitchSemitones) > 0.001 ||
+      (clip.warpMode === 'stretch' && Math.abs(speed - 1) > 0.001)
+
+    let prewarped = false
+    if (wantsWarp) {
+      const key = warpKey(clip.sampleId, speed, clip.pitchSemitones) + (clip.reverse ? '!rev' : '')
+      const cached = getWarped(key)
+      if (cached) {
+        source = cached
+        prewarped = true
+      } else {
+        // Nothing cached — do it inline. An export is allowed to take its time,
+        // and shipping a bounce that doesn't match what was auditioned would
+        // be worse.
+        const warpedChannels = bufferToChannels(source).map((data) =>
+          warp(data, 1 / Math.max(1e-6, speed), clip.pitchSemitones),
+        )
+        source = channelsToBuffer(ctx, warpedChannels, source.sampleRate)
+        prewarped = true
+      }
+    }
+
+    const node = ctx.createBufferSource()
+    node.buffer = source
+    const rate = prewarped ? 1 : speed * Math.pow(2, clip.pitchSemitones / 12)
+    node.playbackRate.value = rate
+
+    const gain = ctx.createGain()
+    const level = Math.max(0.0001, clip.gain)
+    const at = (clipStart - startBeat) * beatSec + lead
+    const duration = lengthBeats * beatSec
+    const fadeIn = Math.max(0.004, clip.fadeInBeats * beatSec)
+    const fadeOut = Math.max(0.004, clip.fadeOutBeats * beatSec)
+
+    gain.gain.setValueAtTime(0.0001, Math.max(0, at))
+    gain.gain.linearRampToValueAtTime(level, Math.max(0, at) + fadeIn)
+    gain.gain.setValueAtTime(level, Math.max(at + fadeIn, at + duration - fadeOut))
+    gain.gain.linearRampToValueAtTime(0.0001, at + duration)
+
+    node.connect(gain).connect(channel.input)
+    const offset = prewarped ? clip.offsetSec / Math.max(1e-6, speed) : clip.offsetSec
+    node.start(Math.max(0, at), Math.max(0, offset), prewarped ? duration : duration * rate)
+  }
+
   // Instruments that buffer their schedule (the string worklet) commit here,
   // once every note is known and before the render starts.
   for (const instrument of instruments.values()) instrument.finalize?.()
@@ -92,47 +165,35 @@ export async function renderProject(project: Project, options: RenderOptions = {
 
 /** 16-bit PCM WAV. Universally readable, and lossless. */
 export function encodeWav(buffer: AudioBuffer): Blob {
-  const channels = Math.min(2, buffer.numberOfChannels)
-  const frames = buffer.length
-  const bytesPerSample = 2
-  const blockAlign = channels * bytesPerSample
-  const dataSize = frames * blockAlign
-  const out = new ArrayBuffer(44 + dataSize)
-  const view = new DataView(out)
-
-  const writeText = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i))
-  }
-
-  writeText(0, 'RIFF')
-  view.setUint32(4, 36 + dataSize, true)
-  writeText(8, 'WAVE')
-  writeText(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true) // PCM
-  view.setUint16(22, channels, true)
-  view.setUint32(24, buffer.sampleRate, true)
-  view.setUint32(28, buffer.sampleRate * blockAlign, true)
-  view.setUint16(32, blockAlign, true)
-  view.setUint16(34, 16, true)
-  writeText(36, 'data')
-  view.setUint32(40, dataSize, true)
-
-  const data = Array.from({ length: channels }, (_, c) => buffer.getChannelData(c))
-  let offset = 44
-  for (let i = 0; i < frames; i++) {
-    for (let c = 0; c < channels; c++) {
-      const s = Math.max(-1, Math.min(1, data[c][i]))
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-      offset += 2
-    }
-  }
-  return new Blob([out], { type: 'audio/wav' })
+  return encodeWavFromBuffer(buffer)
 }
 
 export async function exportWav(project: Project, options: RenderOptions = {}) {
   const buffer = await renderProject(project, options)
   triggerDownload(encodeWav(buffer), `${safeName(project.name)}.wav`)
+}
+
+/**
+ * Bounce every track to its own WAV. Soloing one track at a time and rendering
+ * reuses the exact signal path, so a stem sounds identical to that track in
+ * the mix rather than merely similar.
+ */
+export async function exportTrackStems(
+  project: Project, options: RenderOptions & { onTrack?: (name: string, index: number, total: number) => void } = {},
+) {
+  const tracks = project.tracks
+  for (let index = 0; index < tracks.length; index++) {
+    const track = tracks[index]
+    options.onTrack?.(track.name, index, tracks.length)
+    const soloed: Project = {
+      ...project,
+      tracks: project.tracks.map((t) => ({ ...t, soloed: t.id === track.id, muted: false })),
+    }
+    const buffer = await renderProject(soloed, options)
+    triggerDownload(encodeWav(buffer), `${safeName(project.name)}-${safeName(track.name)}.wav`)
+    // A breath between downloads, or browsers start blocking them.
+    await new Promise((resolve) => setTimeout(resolve, 350))
+  }
 }
 
 // ---------------------------------------------------------------------------

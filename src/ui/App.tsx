@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { engine } from '../audio/engine'
 import { demoProject } from '../music/demo'
-import { emptyProject } from '../music/project'
+import { emptyProject, projectSampleIds } from '../music/project'
+import { hydrateProjectSamples } from '../lib/samples'
 import { GRID_OPTIONS } from '../music/quantize'
 import { loadLastProject, saveProject } from '../lib/persistence'
 import { readShareLink } from '../lib/share'
 import { syncEngine, useStore } from '../state/store'
 import { Arrangement, ClipActions } from './components/Arrangement'
+import { AudioClipEditor } from './components/AudioClipEditor'
 import { DrumGrid } from './components/DrumGrid'
 import { ExportDialog, FilesDialog, HelpDialog, ShareDialog, Welcome } from './components/Dialogs'
 import { HumStudio } from './components/HumStudio'
@@ -29,6 +31,7 @@ export function App() {
   const editorTab = useStore((s) => s.editorTab)
   const selectedTrackId = useStore((s) => s.selectedTrackId)
   const selectedClipId = useStore((s) => s.selectedClipId)
+  const selectedAudioClipId = useStore((s) => s.selectedAudioClipId)
   const grid = useStore((s) => s.grid)
   const snap = useStore((s) => s.snap)
 
@@ -69,6 +72,25 @@ export function App() {
     syncEngine(useStore.getState().project, true)
     setStarted(true)
   }, [])
+
+  // --- keep stored audio loaded for whatever the project references --------
+  const hydrated = useRef(new Set<string>())
+  useEffect(() => {
+    if (!started) return
+    const ids = projectSampleIds(project).filter((id) => !hydrated.current.has(id))
+    if (ids.length === 0) return
+    for (const id of ids) hydrated.current.add(id)
+    void (async () => {
+      const ctx = await engine.resume()
+      const missing = await hydrateProjectSamples(ctx, ids)
+      if (missing.length > 0) {
+        useStore.getState().flash(
+          `${missing.length} audio file${missing.length > 1 ? 's are' : ' is'} missing from this browser's storage`,
+          'warn',
+        )
+      }
+    })()
+  }, [started, project.audioClips, project])
 
   // --- autosave ------------------------------------------------------------
   useEffect(() => {
@@ -165,6 +187,9 @@ export function App() {
   const clip = project.clips.find((c) => c.id === selectedClipId)
     ?? (track ? project.clips.find((c) => c.trackId === track.id) : undefined)
     ?? null
+  const audioClip = (project.audioClips ?? []).find((c) => c.id === selectedAudioClipId)
+    ?? (track ? (project.audioClips ?? []).find((c) => c.trackId === track.id) : undefined)
+    ?? null
 
   if (!started) {
     return booting ? <div className="welcome" /> : <Welcome onStart={(demo) => void start(demo)} />
@@ -186,7 +211,7 @@ export function App() {
             <div className="tabs">
               <button className={`tab ${editorTab === 'notes' ? 'on' : ''}`} onClick={() => useStore.getState().setUI({ editorTab: 'notes' })}>
                 <NoteIcon width={12} height={12} style={{ marginRight: 5, verticalAlign: -2 }} />
-                {track?.isDrum ? 'Beat' : 'Notes'}
+                {track?.kind === 'audio' ? 'Audio' : track?.isDrum ? 'Beat' : 'Notes'}
               </button>
               <button className={`tab ${editorTab === 'keyboard' ? 'on' : ''}`} onClick={() => useStore.getState().setUI({ editorTab: 'keyboard' })}>
                 <Piano width={12} height={12} style={{ marginRight: 5, verticalAlign: -2 }} /> Play
@@ -196,7 +221,7 @@ export function App() {
               </button>
             </div>
 
-            {editorTab === 'notes' && (
+            {editorTab === 'notes' && track?.kind !== 'audio' && (
               <>
                 <div className="sep" />
                 <span className="label">Grid</span>
@@ -227,15 +252,19 @@ export function App() {
               ? <Keyboard track={track} clip={clip} />
               : <EmptyEditor message="Add a track to start playing." />)}
             {editorTab === 'notes' && (
-              track && clip
-                ? (track.isDrum
-                    ? <DrumGrid clip={clip} track={track} />
-                    : <PianoRoll clip={clip} track={track} />)
-                : <EmptyEditor message={
-                    track
-                      ? 'Double-click in this track’s row above to add a clip.'
-                      : 'Hum something in, or add an instrument to get going.'
-                  } />
+              track?.kind === 'audio'
+                ? (audioClip
+                    ? <AudioClipEditor clip={audioClip} track={track} />
+                    : <EmptyEditor message="Drop an audio file onto this track’s row above." />)
+                : track && clip
+                  ? (track.isDrum
+                      ? <DrumGrid clip={clip} track={track} />
+                      : <PianoRoll clip={clip} track={track} />)
+                  : <EmptyEditor message={
+                      track
+                        ? 'Double-click in this track’s row above to add a clip.'
+                        : 'Hum something in, drop in an audio file, or add an instrument.'
+                    } />
             )}
           </div>
         </div>

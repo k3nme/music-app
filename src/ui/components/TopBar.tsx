@@ -8,6 +8,23 @@ import {
   Download, Folder, Help as HelpIcon, Loop, Metronome, Mic, Play, Plus, Redo, Share, Stop, Undo,
 } from '../icons'
 
+function Jobs() {
+  const jobs = useStore((s) => s.jobs)
+  if (jobs.length === 0) return null
+  // Only the newest matters visually; the rest are counted.
+  const job = jobs[jobs.length - 1]
+  return (
+    <div className="jobs">
+      <div className="job">
+        <span className="job-spin" />
+        {job.label}
+        <span className="job-bar"><i style={{ width: `${Math.round(job.progress * 100)}%` }} /></span>
+        {jobs.length > 1 && <span style={{ color: 'var(--faint)' }}>+{jobs.length - 1}</span>}
+      </div>
+    </div>
+  )
+}
+
 export function TopBar({ onOpenFiles, onExport, onShare }: {
   onOpenFiles(): void
   onExport(): void
@@ -137,6 +154,8 @@ export function TopBar({ onOpenFiles, onExport, onShare }: {
       </select>
 
       <div className="spacer" />
+
+      <Jobs />
 
       <button className="btn icon" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)"><Undo width={14} height={14} /></button>
       <button className="btn icon" onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)"><Redo width={14} height={14} /></button>

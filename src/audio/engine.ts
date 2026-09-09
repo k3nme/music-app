@@ -25,6 +25,27 @@ export interface QueuedNote {
 /** The store supplies this; the scheduler asks for notes one window at a time. */
 export type NoteSource = (fromBeat: number, toBeat: number) => QueuedNote[]
 
+/** One audio clip the scheduler should start, with its derived timing. */
+export interface QueuedAudio {
+  clipId: string
+  trackId: string
+  sampleId: string
+  startBeat: number
+  lengthBeats: number
+  /** Source seconds per timeline second. */
+  speed: number
+  offsetSec: number
+  sourceDurationSec: number
+  gain: number
+  fadeInBeats: number
+  fadeOutBeats: number
+  pitchSemitones: number
+  warpMode: 'stretch' | 'repitch'
+  reverse: boolean
+}
+
+export type AudioSource = (fromBeat: number, toBeat: number) => QueuedAudio[]
+
 export interface ChannelSettings {
   volume: number
   pan: number
@@ -283,6 +304,16 @@ export class AudioEngine {
 
   private ticker = createTicker(() => this.tick())
   private noteSource: NoteSource = () => []
+  private audioSource: AudioSource = () => []
+
+  /** Resolves the buffer to play; the store owns warp rendering and caching. */
+  resolveAudio: ((request: QueuedAudio) => { buffer: AudioBuffer; prewarped: boolean } | null) | null = null
+  /** Fired when a clip wants a warped render that isn't ready yet. */
+  onWarpNeeded: ((request: QueuedAudio) => void) | null = null
+
+  private activeAudio = new Set<{ node: AudioBufferSourceNode; gain: GainNode }>()
+  /** Clip instances already started for the current loop pass. */
+  private startedAudio = new Set<string>()
 
   bpm = 120
   loopEnabled = true
@@ -333,15 +364,27 @@ export class AudioEngine {
     this.noteSource = source
   }
 
+  setAudioSource(source: AudioSource) {
+    this.audioSource = source
+  }
+
   // --- tracks --------------------------------------------------------------
 
-  ensureTrack(trackId: string, presetId: string, settings: ChannelSettings) {
-    if (!this.ctx || !this.master) return
+  /** Build just the channel strip. Audio tracks need this and nothing else. */
+  ensureChannel(trackId: string, settings: ChannelSettings): Channel | null {
+    if (!this.ctx || !this.master) return null
     let channel = this.channels.get(trackId)
     if (!channel) {
       channel = buildChannel(this.ctx, this.master, settings)
       this.channels.set(trackId, channel)
     }
+    return channel
+  }
+
+  ensureTrack(trackId: string, presetId: string, settings: ChannelSettings) {
+    if (!this.ctx || !this.master) return
+    const channel = this.ensureChannel(trackId, settings)
+    if (!channel) return
     if (this.presetOf.get(trackId) !== presetId) {
       const old = this.instruments.get(trackId)
       if (old) {
@@ -453,6 +496,7 @@ export class AudioEngine {
     this.originBeat = start
     this.cursorBeat = start
     this.lastMetronomeBeat = Math.floor(start) - 1
+    this.startedAudio.clear()
     this.playing = true
     this.ticker.start(TICK_MS)
     this.tick()
@@ -465,6 +509,20 @@ export class AudioEngine {
     this.ticker.stop()
     const t = this.currentTime
     for (const inst of this.instruments.values()) inst.allNotesOff(t)
+    this.stopAllAudio(t)
+    this.startedAudio.clear()
+  }
+
+  /** Stop every playing audio clip, with a short ramp so it doesn't click. */
+  private stopAllAudio(when: number) {
+    for (const active of this.activeAudio) {
+      try {
+        active.gain.gain.cancelScheduledValues(when)
+        active.gain.gain.setTargetAtTime(0.0001, when, 0.008)
+        active.node.stop(when + 0.06)
+      } catch { /* already stopped */ }
+    }
+    this.activeAudio.clear()
   }
 
   seek(beat: number) {
@@ -476,6 +534,14 @@ export class AudioEngine {
   panic() {
     const t = this.currentTime
     for (const inst of this.instruments.values()) inst.allNotesOff(t)
+    this.stopAllAudio(t)
+  }
+
+  /** Drop any playing instance of a clip, so an edit takes effect immediately. */
+  refreshAudio() {
+    if (!this.playing) return
+    this.stopAllAudio(this.currentTime)
+    this.startedAudio.clear()
   }
 
   // --- live playing --------------------------------------------------------
@@ -560,11 +626,88 @@ export class AudioEngine {
         dispatched.push({ trackId: note.trackId, midi: note.midi, time, duration })
       }
 
+      this.scheduleAudio(songStart, songEnd, offset, now)
+
       if (this.metronome) this.scheduleMetronome(songStart, songEnd, offset)
       this.cursorBeat = chunkEnd
     }
 
     if (dispatched.length) this.onNotesScheduled?.(dispatched)
+  }
+
+  /**
+   * Start any audio clip overlapping this window that hasn't been started for
+   * the current loop pass. Clips already in progress when playback begins (or
+   * when the loop wraps into the middle of one) start part-way through, which
+   * is why this tracks instances rather than just clip starts.
+   */
+  private scheduleAudio(fromBeat: number, toBeat: number, offset: number, now: number) {
+    if (!this.ctx || !this.master) return
+    const pass = this.loopEnabled && this.loopEnd > this.loopStart
+      ? Math.floor((this.cursorBeat - this.loopStart) / (this.loopEnd - this.loopStart))
+      : 0
+
+    for (const request of this.audioSource(fromBeat, toBeat)) {
+      const key = `${request.clipId}:${pass}`
+      if (this.startedAudio.has(key)) continue
+
+      const channel = this.channels.get(request.trackId)
+      if (!channel) continue
+      const resolved = this.resolveAudio?.(request)
+      if (!resolved) {
+        this.onWarpNeeded?.(request)
+        continue
+      }
+      this.startedAudio.add(key)
+
+      const beatSec = 60 / this.bpm
+      const timelineStart = this.timeAt(request.startBeat + offset)
+      // How far into the clip we already are, if it started before this window.
+      const lateBy = Math.max(0, now + 0.01 - timelineStart)
+      const startAt = Math.max(now + 0.01, timelineStart)
+      const remaining = request.lengthBeats * beatSec - lateBy
+      if (remaining <= 0.02) continue
+
+      // A pre-warped buffer already carries the tempo and pitch change, so it
+      // plays at rate 1. Otherwise fall back to varispeed, which is what a
+      // turntable does — audibly different, but never silent while a render
+      // is still in flight.
+      const rate = resolved.prewarped
+        ? 1
+        : request.speed * Math.pow(2, request.pitchSemitones / 12)
+      const sourceOffset = resolved.prewarped
+        ? request.offsetSec / Math.max(1e-6, request.speed) + lateBy
+        : request.offsetSec + lateBy * rate
+
+      const node = this.ctx.createBufferSource()
+      node.buffer = resolved.buffer
+      node.playbackRate.value = rate
+
+      const gain = this.ctx.createGain()
+      const level = Math.max(0.0001, request.gain)
+      const fadeIn = Math.max(0.004, request.fadeInBeats * beatSec)
+      const fadeOut = Math.max(0.004, request.fadeOutBeats * beatSec)
+      gain.gain.setValueAtTime(lateBy > 0 ? level : 0.0001, startAt)
+      if (lateBy <= 0) gain.gain.linearRampToValueAtTime(level, startAt + fadeIn)
+      const endAt = startAt + remaining
+      gain.gain.setValueAtTime(level, Math.max(startAt + fadeIn, endAt - fadeOut))
+      gain.gain.linearRampToValueAtTime(0.0001, endAt)
+
+      node.connect(gain).connect(channel.input)
+      const playFor = resolved.prewarped ? remaining : remaining * rate
+      try {
+        node.start(startAt, Math.max(0, sourceOffset), Math.max(0.01, playFor))
+      } catch {
+        continue
+      }
+
+      const active = { node, gain }
+      this.activeAudio.add(active)
+      node.onended = () => {
+        this.activeAudio.delete(active)
+        try { gain.disconnect() } catch { /* noop */ }
+      }
+    }
   }
 
   private scheduleMetronome(fromBeat: number, toBeat: number, offset: number) {

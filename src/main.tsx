@@ -12,10 +12,14 @@ if (import.meta.env.DEV) {
     import('./lib/export'),
     import('./music/demo'),
     import('./audio/analysis'),
-  ]).then(([store, audio, exporter, demo, analysis]) => {
-    Object.assign(window, {
-      __overtone: { ...store, ...audio, ...exporter, ...demo, ...analysis },
-    })
+    import('./lib/samples'),
+    import('./lib/importAudio'),
+    import('./music/matching'),
+    import('./music/project'),
+    import('./audio/workers'),
+    import('./lib/wav'),
+  ]).then((modules) => {
+    Object.assign(window, { __overtone: Object.assign({}, ...modules) })
   })
 }
 

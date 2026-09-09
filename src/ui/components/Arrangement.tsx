@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { engine } from '../../audio/engine'
 import { getPreset } from '../../audio/instruments'
-import { clipsForTrack, type Clip, type Track } from '../../music/project'
+import {
+  audioClipLengthBeats, audioClipsForTrack, clipsForTrack,
+  type AudioClip, type Clip, type Track,
+} from '../../music/project'
+import { getSampleMeta } from '../../lib/samples'
+import { importAudioIntoProject, looksLikeAudio } from '../../lib/importAudio'
+import { Waveform } from './Waveform'
 import { useStore } from '../../state/store'
 import { useLevel, usePlayhead } from '../hooks'
 import { Copy, Plus, Trash } from '../icons'
@@ -14,11 +20,14 @@ export function Arrangement() {
   const playing = useStore((s) => s.playing)
   const selectedTrackId = useStore((s) => s.selectedTrackId)
   const selectedClipId = useStore((s) => s.selectedClipId)
+  const selectedAudioClipId = useStore((s) => s.selectedAudioClipId)
   const snap = useStore((s) => s.snap)
   const grid = useStore((s) => s.grid)
 
   const [ppb, setPpb] = useState(18)
+  const [dropping, setDropping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const headsRef = useRef<HTMLDivElement>(null)
   const beat = usePlayhead(playing)
 
@@ -76,19 +85,64 @@ export function Arrangement() {
           {project.tracks.map((track) => (
             <TrackHead key={track.id} track={track} selected={track.id === selectedTrackId} playing={playing} />
           ))}
-          <button
-            className="btn ghost"
-            style={{ margin: 8, width: 'calc(100% - 16px)', justifyContent: 'center' }}
-            onClick={() => useStore.getState().setUI({ instrumentPickerFor: 'new' })}
-          >
-            <Plus width={13} height={13} /> Add instrument
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>
+            <button
+              className="btn ghost"
+              style={{ justifyContent: 'center' }}
+              onClick={() => useStore.getState().setUI({ instrumentPickerFor: 'new' })}
+            >
+              <Plus width={13} height={13} /> Add instrument
+            </button>
+            <button
+              className="btn ghost"
+              style={{ justifyContent: 'center' }}
+              onClick={() => fileRef.current?.click()}
+              title="Import a song or loop"
+            >
+              <Plus width={13} height={13} /> Import audio
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="audio/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])].filter(looksLikeAudio)
+                for (const file of files) void importAudioIntoProject(file, { startBeat: 0 })
+                e.target.value = ''
+              }}
+            />
+          </div>
         </div>
       </div>
 
       <div
-        className="arrangement"
+        className={`arrangement ${dropping ? 'dropping' : ''}`}
         ref={scrollRef}
+        onDragOver={(e) => {
+          if (![...e.dataTransfer.types].includes('Files')) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+          setDropping(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          setDropping(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDropping(false)
+          const files = [...e.dataTransfer.files].filter(looksLikeAudio)
+          if (files.length === 0) {
+            if (e.dataTransfer.files.length > 0) {
+              useStore.getState().flash('That file type is not audio', 'warn')
+            }
+            return
+          }
+          const startBeat = snapBeat(beatAtClientX(e.clientX))
+          for (const file of files) void importAudioIntoProject(file, { startBeat })
+        }}
         onScroll={(e) => {
           if (headsRef.current) headsRef.current.scrollTop = e.currentTarget.scrollTop
         }}
@@ -113,9 +167,12 @@ export function Arrangement() {
               key={track.id}
               track={track}
               clips={clipsForTrack(project, track.id)}
+              audioClips={audioClipsForTrack(project, track.id)}
+              bpm={project.bpm}
               ppb={ppb}
               beatsPerBar={project.beatsPerBar}
               selectedClipId={selectedClipId}
+              selectedAudioClipId={selectedAudioClipId}
               snapBeat={snapBeat}
               beatAtClientX={beatAtClientX}
             />
@@ -124,7 +181,7 @@ export function Arrangement() {
           {project.tracks.length === 0 && (
             <div className="empty-hint" style={{ height: 180 }}>
               Nothing here yet — hit <b style={{ color: 'var(--rec)', margin: '0 4px' }}>Hum it</b> to sing an
-              idea in, or add an instrument on the left.
+              idea in, add an instrument on the left, or drop an audio file here.
             </div>
           )}
 
@@ -252,12 +309,18 @@ function TrackHead({ track, selected, playing }: { track: Track; selected: boole
 
 // ---------------------------------------------------------------------------
 
-function Lane({ track, clips, ppb, beatsPerBar, selectedClipId, snapBeat, beatAtClientX }: {
+function Lane({
+  track, clips, audioClips, bpm, ppb, beatsPerBar,
+  selectedClipId, selectedAudioClipId, snapBeat, beatAtClientX,
+}: {
   track: Track
   clips: Clip[]
+  audioClips: AudioClip[]
+  bpm: number
   ppb: number
   beatsPerBar: number
   selectedClipId: string | null
+  selectedAudioClipId: string | null
   snapBeat(v: number): number
   beatAtClientX(x: number): number
 }) {
@@ -271,10 +334,13 @@ function Lane({ track, clips, ppb, beatsPerBar, selectedClipId, snapBeat, beatAt
       onPointerDown={() => select(track.id)}
       onDoubleClick={(e) => {
         if ((e.target as HTMLElement).closest('.clip')) return
+        if (track.kind === 'audio') return
         const start = snapBeat(beatAtClientX(e.clientX))
         addClip(track.id, Math.floor(start / beatsPerBar) * beatsPerBar)
       }}
-      title="Double-click to add an empty clip"
+      title={track.kind === 'audio'
+        ? 'Drop an audio file here'
+        : 'Double-click to add an empty clip'}
     >
       <div
         className="lane-grid"
@@ -292,6 +358,98 @@ function Lane({ track, clips, ppb, beatsPerBar, selectedClipId, snapBeat, beatAt
           snapBeat={snapBeat}
         />
       ))}
+      {audioClips.map((clip) => (
+        <AudioClipView
+          key={clip.id}
+          clip={clip}
+          hue={clip.hue ?? track.color}
+          bpm={bpm}
+          ppb={ppb}
+          selected={clip.id === selectedAudioClipId}
+          snapBeat={snapBeat}
+        />
+      ))}
+    </div>
+  )
+}
+
+function AudioClipView({ clip, hue, bpm, ppb, selected, snapBeat }: {
+  clip: AudioClip; hue: number; bpm: number; ppb: number; selected: boolean
+  snapBeat(v: number): number
+}) {
+  const { updateAudioClip, commit, removeAudioClip, setUI } = useStore.getState()
+  const meta = getSampleMeta(clip.sampleId)
+  const lengthBeats = audioClipLengthBeats(clip, bpm)
+  const speed = clip.warp && clip.originalBpm ? bpm / clip.originalBpm : 1
+
+  const startDrag = (mode: 'move' | 'trim') => (e: React.PointerEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setUI({ selectedAudioClipId: clip.id, selectedTrackId: clip.trackId })
+    const originX = e.clientX
+    const origin = { start: clip.startBeat, duration: clip.sourceDurationSec }
+    let moved = false
+
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - originX) > 3) { moved = true; commit() }
+      if (!moved) return
+      const deltaBeats = (ev.clientX - originX) / ppb
+      if (mode === 'move') {
+        updateAudioClip(clip.id, { startBeat: Math.max(0, snapBeat(origin.start + deltaBeats)) })
+      } else {
+        // Trimming changes how much *source* is used; the timeline length
+        // follows from that and the warp speed.
+        const deltaSeconds = (deltaBeats * 60 / bpm) * speed
+        const maxDuration = (meta?.durationSec ?? origin.duration) - clip.offsetSec
+        updateAudioClip(clip.id, {
+          sourceDurationSec: Math.max(0.05, Math.min(maxDuration, origin.duration + deltaSeconds)),
+        })
+      }
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const total = meta?.durationSec || 1
+  const from = clip.offsetSec / total
+  const to = Math.min(1, (clip.offsetSec + clip.sourceDurationSec) / total)
+
+  return (
+    <div
+      className={`clip audio ${selected ? 'sel' : ''}`}
+      style={{
+        left: clip.startBeat * ppb,
+        width: Math.max(10, lengthBeats * ppb),
+        ['--hue' as string]: hue,
+      }}
+      onPointerDown={startDrag('move')}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => { e.preventDefault(); if (e.shiftKey) removeAudioClip(clip.id) }}
+      title={`${clip.name}${clip.originalBpm ? ` — ${Math.round(clip.originalBpm)} BPM source` : ''}`}
+    >
+      <div className="clip-name">
+        {clip.name}
+        {clip.warp && Math.abs(speed - 1) > 0.005 && (
+          <span className="clip-badge">{speed > 1 ? '↑' : '↓'}{Math.round(Math.abs(speed - 1) * 100)}%</span>
+        )}
+        {clip.pitchSemitones !== 0 && (
+          <span className="clip-badge">{clip.pitchSemitones > 0 ? '+' : ''}{clip.pitchSemitones}st</span>
+        )}
+      </div>
+      <div className="clip-wave">
+        <Waveform
+          peaks={meta?.analysis?.peaks}
+          from={clip.reverse ? 1 - to : from}
+          to={clip.reverse ? 1 - from : to}
+          height={34}
+          color={`hsl(${hue} 85% 74%)`}
+        />
+      </div>
+      <div className="clip-resize" onPointerDown={startDrag('trim')} />
     </div>
   )
 }

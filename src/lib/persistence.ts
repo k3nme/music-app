@@ -96,7 +96,16 @@ export function migrate(project: Project): Project {
     master: { ...base.master, ...project.master },
     tracks: (project.tracks ?? []).map((t) => ({
       ...t,
+      // Projects saved before audio tracks existed are all MIDI.
+      kind: t.kind ?? 'midi',
       channel: { ...DEFAULT_CHANNEL, ...t.channel },
+    })),
+    audioClips: (project.audioClips ?? []).map((c) => ({
+      ...c,
+      warpMode: c.warpMode ?? 'stretch',
+      gain: c.gain ?? 1,
+      pitchSemitones: c.pitchSemitones ?? 0,
+      reverse: c.reverse ?? false,
     })),
     clips: (project.clips ?? []).map((c) => ({
       ...c,

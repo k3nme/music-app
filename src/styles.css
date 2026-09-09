@@ -631,3 +631,115 @@ input[type='range']::-moz-range-thumb {
   .brand-name, .position { display: none; }
   .arrange-pane { flex: 1 1 38%; }
 }
+
+/* --- audio clips --------------------------------------------------------- */
+
+.clip.audio {
+  background: linear-gradient(180deg, hsl(var(--hue) 45% 26%) 0%, hsl(var(--hue) 45% 19%) 100%);
+}
+.clip-wave { position: absolute; inset: 14px 2px 2px; opacity: 0.9; pointer-events: none; }
+.clip-badge {
+  display: inline-block; margin-left: 5px; padding: 0 4px;
+  border-radius: 3px; background: rgba(0, 0, 0, 0.35);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.arrangement.dropping::after {
+  content: 'Drop audio to add it to the timeline';
+  position: absolute; inset: 30px 0 0 0; z-index: 40;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--accent) 16%, rgba(8, 9, 14, 0.72));
+  border: 2px dashed var(--accent);
+  color: var(--text); font-size: 14px; font-weight: 600;
+  pointer-events: none;
+}
+
+/* --- jobs ---------------------------------------------------------------- */
+
+.jobs { display: flex; align-items: center; gap: 8px; }
+.job {
+  display: flex; align-items: center; gap: 7px;
+  height: 26px; padding: 0 10px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 11px; color: var(--dim); white-space: nowrap;
+}
+.job-bar { width: 44px; height: 3px; border-radius: 2px; background: var(--panel-3); overflow: hidden; }
+.job-bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.2s var(--ease); }
+.job-spin {
+  width: 11px; height: 11px; border-radius: 50%; flex: none;
+  border: 2px solid var(--panel-3); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- inspector ----------------------------------------------------------- */
+
+.inspector { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; }
+.inspector-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inspector-title { font-size: 14px; font-weight: 640; }
+.inspector-facts { display: flex; gap: 6px; flex-wrap: wrap; }
+.fact {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 0 9px; border-radius: 6px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  font-size: 11px; color: var(--dim);
+}
+.fact b { color: var(--text); font-weight: 620; }
+.fact.warn { border-color: var(--warn); color: #ffe4ab; }
+
+.inspector-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px;
+}
+.control { display: flex; flex-direction: column; gap: 5px; }
+.control-head { display: flex; justify-content: space-between; align-items: baseline; }
+.control-note { font-size: 10.5px; color: var(--faint); }
+
+.wave-panel {
+  border-radius: var(--r); overflow: hidden;
+  background: var(--bg-1); border: 1px solid var(--line);
+}
+
+/* --- stem picker --------------------------------------------------------- */
+
+.stem-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.stem-chip {
+  display: flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 13px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 550; color: var(--dim);
+  transition: background 0.14s var(--ease), border-color 0.14s var(--ease), color 0.14s var(--ease);
+}
+.stem-chip:hover { background: var(--panel-3); color: var(--text); }
+.stem-chip.on { background: color-mix(in srgb, var(--accent) 18%, var(--panel-2)); border-color: var(--accent); color: var(--text); }
+.stem-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* --- mashup lab ---------------------------------------------------------- */
+
+.deck {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; border-radius: var(--r);
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.deck.target { border-color: var(--accent); }
+.deck-head { display: flex; align-items: center; gap: 8px; }
+.deck-name {
+  font-size: 13px; font-weight: 620; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.deck-wave { height: 54px; border-radius: 6px; overflow: hidden; background: var(--bg-1); }
+.deck-empty {
+  min-height: 132px; border-radius: var(--r);
+  border: 2px dashed var(--line); background: var(--bg-1);
+  display: grid; place-items: center; text-align: center;
+  color: var(--faint); font-size: 12.5px; padding: 16px;
+  transition: border-color 0.14s var(--ease), background 0.14s var(--ease);
+}
+.deck-empty.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-1)); color: var(--text); }
+
+.match-summary {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--r);
+  background: var(--bg-1); border: 1px solid var(--line);
+  font-size: 12px; color: var(--dim);
+}

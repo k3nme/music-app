@@ -50,6 +50,8 @@ export interface StemOptions {
   bassCutoffHz: number
   /** How strongly to trust the centre-channel cue. 0 disables it. */
   centreStrength: number
+  /** Where the voice lives, in Hz. Content outside it is never called vocal. */
+  vocalBandHz: [number, number]
   onProgress?: (fraction: number) => void
 }
 
@@ -61,6 +63,24 @@ export const DEFAULT_STEMS: StemOptions = {
   maskPower: 2,
   bassCutoffHz: 220,
   centreStrength: 1,
+  vocalBandHz: [140, 6000],
+}
+
+/**
+ * How likely a frequency is to be voice, as a smooth 0..1 curve.
+ *
+ * The centre cue on its own says "this is panned centre", which is not the
+ * same as "this is a singer" — bass guitars, kick drums and centred keyboards
+ * are all dead centre too. Weighting by the vocal range stops the low end and
+ * the cymbals from being labelled vocal, and hands them to `other` instead.
+ */
+function vocalBandWeight(hz: number, band: [number, number]): number {
+  const [low, high] = band
+  if (hz <= low * 0.6 || hz >= high * 1.6) return 0
+  // Raised-cosine skirts on a log scale, flat across the core of the range.
+  if (hz < low) return 0.5 - 0.5 * Math.cos((Math.PI * Math.log(hz / (low * 0.6))) / Math.log(low / (low * 0.6)))
+  if (hz > high) return 0.5 + 0.5 * Math.cos((Math.PI * Math.log(hz / high)) / Math.log((high * 1.6) / high))
+  return 1
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +271,10 @@ export function separateStems(
 
     const bins = monoSpec.bins
     const bassBin = Math.max(1, Math.floor((o.bassCutoffHz * o.fftSize) / sampleRate))
+    const vocalWeight = new Float32Array(bins)
+    for (let k = 0; k < bins; k++) {
+      vocalWeight[k] = vocalBandWeight((k * sampleRate) / o.fftSize, o.vocalBandHz)
+    }
 
     for (let channel = 0; channel < channelCount; channel++) {
       const spec = specs[channel]
@@ -275,9 +299,11 @@ export function separateStems(
             // Sustained low end is the bass part.
             masks.bass[i] = harmonic
           } else if (centre) {
-            const isCentre = centre[i]
-            masks.vocals[i] = harmonic * isCentre
-            masks.other[i] = harmonic * (1 - isCentre)
+            // Centre-panned *and* in the vocal range. A centred cello or a
+            // hi-hat wash fails the second test and goes to `other`.
+            const voiceLikelihood = centre[i] * vocalWeight[k]
+            masks.vocals[i] = harmonic * voiceLikelihood
+            masks.other[i] = harmonic * (1 - voiceLikelihood)
           } else {
             // Mono source: no centre cue available, so everything sustained
             // above the bass goes to "other" and vocals stay empty rather

@@ -11,9 +11,12 @@ import { create } from 'zustand'
 import { engine, type ChannelSettings, type MasterSettings } from '../audio/engine'
 import { getPreset, isDrumPreset } from '../audio/instruments'
 import {
-  clipsForTrack, collectNotes, contentEndBeat, createClip, createTrack,
-  emptyProject, type Clip, type Note, type Project, type Track,
+  audioClipLengthBeats, clipsForTrack, collectAudio, collectNotes, contentEndBeat,
+  createAudioClip, createClip, createTrack, emptyProject, projectSampleIds,
+  type AudioClip, type Clip, type Note, type Project, type Track,
 } from '../music/project'
+import { installAudioBridge } from './audioBridge'
+import { getSampleMeta } from '../lib/samples'
 import type { ScaleId } from '../music/theory'
 import { GRID_OPTIONS } from '../music/quantize'
 
@@ -22,6 +25,7 @@ export type EditorTab = 'notes' | 'mixer' | 'keyboard'
 export interface UIState {
   selectedTrackId: string | null
   selectedClipId: string | null
+  selectedAudioClipId: string | null
   selectedNoteIds: string[]
   /** Editing grid in beats. */
   grid: number
@@ -35,6 +39,8 @@ export interface UIState {
   /** Transport toggles live here so the engine and the UI can't disagree. */
   loopEnabled: boolean
   metronome: boolean
+  /** Long-running DSP work, surfaced so the app never looks frozen. */
+  jobs: { id: string; label: string; progress: number }[]
   status: { message: string; tone: 'info' | 'warn' | 'good' } | null
 }
 
@@ -71,6 +77,12 @@ interface Store extends UIState {
   duplicateClip(clipId: string): string | null
   setClipNotes(clipId: string, notes: Note[]): void
 
+  // --- audio ---
+  addAudioTrack(name?: string): string
+  addAudioClipFromSample(trackId: string, sampleId: string, patch?: Partial<AudioClip>): string
+  updateAudioClip(clipId: string, patch: Partial<AudioClip>): void
+  removeAudioClip(clipId: string): void
+
   // --- notes ---
   addNote(clipId: string, note: Note): void
   updateNote(clipId: string, noteId: string, patch: Partial<Note>): void
@@ -82,6 +94,9 @@ interface Store extends UIState {
   setSelectedNotes(ids: string[]): void
   setUI(patch: Partial<UIState>): void
   flash(message: string, tone?: 'info' | 'warn' | 'good'): void
+  startJob(label: string): string
+  updateJob(id: string, progress: number, label?: string): void
+  endJob(id: string): void
 
   // --- transport ---
   togglePlay(): Promise<void>
@@ -114,6 +129,7 @@ export const useStore = create<Store>((set, get) => ({
 
   selectedTrackId: null,
   selectedClipId: null,
+  selectedAudioClipId: null,
   selectedNoteIds: [],
   grid: 0.25,
   snap: true,
@@ -124,6 +140,7 @@ export const useStore = create<Store>((set, get) => ({
   keyboardOctave: 4,
   loopEnabled: true,
   metronome: false,
+  jobs: [],
   status: null,
 
   // --- project ------------------------------------------------------------
@@ -135,6 +152,7 @@ export const useStore = create<Store>((set, get) => ({
       future: [],
       selectedTrackId: project.tracks[0]?.id ?? null,
       selectedClipId: project.clips[0]?.id ?? null,
+      selectedAudioClipId: null,
       selectedNoteIds: [],
     }))
   },
@@ -340,6 +358,69 @@ export const useStore = create<Store>((set, get) => ({
     }))
   },
 
+  // --- audio ---------------------------------------------------------------
+
+  addAudioTrack(name = 'Audio') {
+    const track = createTrack({ name, kind: 'audio', presetId: 'grand-piano', color: 196 })
+    get().commit()
+    set((s) => ({
+      project: touch({ ...s.project, tracks: [...s.project.tracks, track] }),
+      selectedTrackId: track.id,
+    }))
+    return track.id
+  },
+
+  addAudioClipFromSample(trackId, sampleId, patch = {}) {
+    const meta = getSampleMeta(sampleId)
+    const project = get().project
+    const clip = createAudioClip(trackId, sampleId, {
+      name: meta?.name ?? 'Audio',
+      sourceDurationSec: meta?.durationSec ?? 0,
+      // A clip only warps if we know what tempo it came from; without that,
+      // stretching it would be guesswork.
+      originalBpm: meta?.analysis?.beat.bpm ?? null,
+      warp: Boolean(meta?.analysis?.beat.bpm),
+      ...patch,
+    })
+    get().commit()
+    set((s) => ({
+      project: touch({
+        ...s.project,
+        audioClips: [...(s.project.audioClips ?? []), clip],
+        lengthBeats: Math.max(
+          s.project.lengthBeats,
+          clip.startBeat + audioClipLengthBeats(clip, project.bpm),
+        ),
+      }),
+      selectedTrackId: trackId,
+      selectedClipId: null,
+      selectedAudioClipId: clip.id,
+    }))
+    return clip.id
+  },
+
+  updateAudioClip(clipId, patch) {
+    set((s) => ({
+      project: touch({
+        ...s.project,
+        audioClips: (s.project.audioClips ?? []).map((c) => (c.id === clipId ? { ...c, ...patch } : c)),
+      }),
+    }))
+    engine.refreshAudio()
+  },
+
+  removeAudioClip(clipId) {
+    get().commit()
+    set((s) => ({
+      project: touch({
+        ...s.project,
+        audioClips: (s.project.audioClips ?? []).filter((c) => c.id !== clipId),
+      }),
+      selectedAudioClipId: s.selectedAudioClipId === clipId ? null : s.selectedAudioClipId,
+    }))
+    engine.refreshAudio()
+  },
+
   // --- notes --------------------------------------------------------------
 
   addNote(clipId, note) {
@@ -410,6 +491,22 @@ export const useStore = create<Store>((set, get) => ({
 
   setUI(patch) {
     set(patch as Partial<Store>)
+  },
+
+  startJob(label) {
+    const id = `job_${Math.random().toString(36).slice(2, 9)}`
+    set((s) => ({ jobs: [...s.jobs, { id, label, progress: 0 }] }))
+    return id
+  },
+
+  updateJob(id, progress, label) {
+    set((s) => ({
+      jobs: s.jobs.map((job) => (job.id === id ? { ...job, progress, label: label ?? job.label } : job)),
+    }))
+  },
+
+  endJob(id) {
+    set((s) => ({ jobs: s.jobs.filter((job) => job.id !== id) }))
   },
 
   flash(message, tone = 'info') {
@@ -500,7 +597,8 @@ export function syncEngine(project: Project, force = false) {
   const soloed = project.tracks.some((t) => t.soloed)
   for (const track of project.tracks) {
     const muted = track.muted || (soloed && !track.soloed)
-    engine.ensureTrack(track.id, track.presetId, { ...track.channel, muted })
+    if (track.kind === 'audio') engine.ensureChannel(track.id, { ...track.channel, muted })
+    else engine.ensureTrack(track.id, track.presetId, { ...track.channel, muted })
     engine.updateChannel(track.id, { ...track.channel, muted })
   }
   if (previous) {
@@ -518,8 +616,30 @@ useStore.subscribe((state, prev) => {
   if (state.metronome !== prev.metronome) engine.metronome = state.metronome
 })
 
-// The scheduler pulls notes straight from the current project.
+// The scheduler pulls notes and audio straight from the current project.
 engine.setNoteSource((from, to) => collectNotes(useStore.getState().project, from, to))
+engine.setAudioSource((from, to) =>
+  collectAudio(useStore.getState().project, from, to).map((item) => ({
+    clipId: item.clip.id,
+    trackId: item.trackId,
+    sampleId: item.clip.sampleId,
+    startBeat: item.startBeat,
+    lengthBeats: item.lengthBeats,
+    speed: item.speed,
+    offsetSec: item.clip.offsetSec,
+    sourceDurationSec: item.clip.sourceDurationSec,
+    gain: item.clip.gain,
+    fadeInBeats: item.clip.fadeInBeats,
+    fadeOutBeats: item.clip.fadeOutBeats,
+    pitchSemitones: item.clip.pitchSemitones,
+    warpMode: item.clip.warpMode,
+    reverse: item.clip.reverse,
+  })),
+)
+installAudioBridge()
 engine.onStop = () => useStore.getState().setPlaying(false)
 
 export const GRIDS = GRID_OPTIONS
+
+/** Sample ids the current project needs loaded. */
+export const currentSampleIds = () => projectSampleIds(useStore.getState().project)

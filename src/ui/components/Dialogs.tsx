@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { engine } from '../../audio/engine'
-import { exportMidi, exportWav } from '../../lib/export'
+import { exportMidi, exportTrackStems, exportWav } from '../../lib/export'
 import {
   deleteProject, downloadProject, listProjects, loadProject, readProjectFile, saveProject,
   type ProjectSummary,
 } from '../../lib/persistence'
 import { copyToClipboard, createShareLink } from '../../lib/share'
+import { formatBytes, knownSamples, deleteSample, storageUsage } from '../../lib/samples'
 import { contentEndBeat } from '../../music/project'
 import { useStore } from '../../state/store'
 import { Close, Download, Share, Trash } from '../icons'
@@ -44,9 +45,17 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
   const project = useStore((s) => s.project)
   const { setProject, newProject, flash } = useStore.getState()
   const [entries, setEntries] = useState<ProjectSummary[]>(() => listProjects())
+  const [samples, setSamples] = useState(() => knownSamples())
+  const [usage, setUsage] = useState({ usedBytes: 0, quotaBytes: 0 })
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const refresh = () => setEntries(listProjects())
+  const refresh = () => {
+    setEntries(listProjects())
+    setSamples(knownSamples())
+    void storageUsage().then(setUsage)
+  }
+
+  useEffect(() => { void storageUsage().then(setUsage) }, [])
 
   return (
     <Sheet
@@ -128,6 +137,43 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
           </div>
         ))}
       </div>
+
+      {samples.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div className="label" style={{ marginBottom: 8 }}>
+            Audio storage — {formatBytes(usage.usedBytes)}
+            {usage.quotaBytes > 0 && ` of about ${formatBytes(usage.quotaBytes)} available`}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 190, overflow: 'auto' }}>
+            {samples.map((sample) => (
+              <div key={sample.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px',
+                background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 6,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {sample.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--faint)' }}>
+                    {sample.durationSec.toFixed(1)}s · {formatBytes(sample.byteSize)}
+                    {sample.analysis && ` · ${Math.round(sample.analysis.beat.bpm)} BPM`}
+                  </div>
+                </div>
+                <button
+                  className="btn icon danger"
+                  title="Delete this audio"
+                  onClick={async () => {
+                    const inUse = (project.audioClips ?? []).some((c) => c.sampleId === sample.id)
+                    if (inUse) { flash('That audio is used in this project', 'warn'); return }
+                    await deleteSample(sample.id)
+                    refresh()
+                  }}
+                ><Trash width={12} height={12} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Sheet>
   )
 }
@@ -166,7 +212,7 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
 
         <button
           className="btn primary lg"
-          disabled={busy || project.clips.length === 0}
+          disabled={busy || (project.clips.length === 0 && (project.audioClips ?? []).length === 0)}
           onClick={async () => {
             setBusy(true)
             try {
@@ -188,6 +234,29 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
 
         <button
           className="btn lg"
+          disabled={busy || project.tracks.length === 0}
+          onClick={async () => {
+            setBusy(true)
+            try {
+              await exportTrackStems(project, {
+                range: scope === 'loop'
+                  ? { startBeat: engine.loopStart, endBeat: engine.loopEnd }
+                  : undefined,
+                onTrack: (name, index, total) => flash(`Bouncing ${name} (${index + 1}/${total})`),
+              })
+              flash('Track stems exported', 'good')
+            } catch (err) {
+              flash(err instanceof Error ? err.message : 'Export failed', 'warn')
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          Export each track as its own WAV
+        </button>
+
+        <button
+          className="btn lg"
           disabled={project.clips.length === 0}
           onClick={() => { exportMidi(project); flash('MIDI exported', 'good') }}
         >
@@ -198,7 +267,7 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
           Download project file (.json)
         </button>
 
-        {project.clips.length === 0 && (
+        {project.clips.length === 0 && (project.audioClips ?? []).length === 0 && (
           <div style={{ color: 'var(--faint)', fontSize: 12 }}>Add something to the arrangement first.</div>
         )}
       </div>
