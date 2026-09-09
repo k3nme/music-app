@@ -64,6 +64,9 @@ export const Sliders = (p: SVGProps<SVGSVGElement>) => (
 export const Piano = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M9 5v8M15 5v8M3 13h18" /></svg>
 )
+export const Layers = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 13l9 5 9-5" /><path d="M3 17.5l9 5 9-5" /></svg>
+)
 export const Note = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="7" cy="18" r="3" /><path d="M10 18V4l10-2v13" /><circle cx="17" cy="15" r="3" /></svg>
 )

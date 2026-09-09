@@ -5,7 +5,7 @@ import { NOTE_NAMES, SCALES, type ScaleId } from '../../music/theory'
 import { useStore } from '../../state/store'
 import { usePlayhead } from '../hooks'
 import {
-  Download, Folder, Help as HelpIcon, Loop, Metronome, Mic, Play, Plus, Redo, Share, Stop, Undo,
+  Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo, Share, Stop, Undo,
 } from '../icons'
 
 function Jobs() {
@@ -25,10 +25,11 @@ function Jobs() {
   )
 }
 
-export function TopBar({ onOpenFiles, onExport, onShare }: {
+export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
   onOpenFiles(): void
   onExport(): void
   onShare(): void
+  onMashup(): void
 }) {
   const project = useStore((s) => s.project)
   const playing = useStore((s) => s.playing)
@@ -168,6 +169,9 @@ export function TopBar({ onOpenFiles, onExport, onShare }: {
       <button className="btn icon" onClick={onExport} title="Export audio or MIDI"><Download width={14} height={14} /></button>
       <button className="btn icon" onClick={() => setUI({ helpOpen: true })} title="Help (?)"><HelpIcon width={14} height={14} /></button>
 
+      <button className="btn lg mashup-btn" onClick={onMashup} title="Mash up two or more songs (M)">
+        <Layers width={14} height={14} /> Mashup
+      </button>
       <button className="hum-btn" onClick={() => setUI({ humOpen: true })} title="Hum, sing or beatbox an idea (H)">
         <Mic width={15} height={15} /> Hum it
       </button>

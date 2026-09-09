@@ -35,7 +35,11 @@ export async function renderProject(project: Project, options: RenderOptions = {
   const beatSec = 60 / project.bpm
 
   const startBeat = options.range?.startBeat ?? 0
-  const endBeat = options.range?.endBeat ?? Math.max(contentEndBeat(project), project.lengthBeats)
+  // Render as far as the music goes, not as far as the canvas does — the
+  // arrangement length is a working area, and padding a bounce with silence
+  // out to it is never what anyone wants.
+  const content = contentEndBeat(project)
+  const endBeat = options.range?.endBeat ?? (content > 0 ? content : project.lengthBeats)
   const lengthBeats = Math.max(1, endBeat - startBeat)
   const seconds = lengthBeats * beatSec + tail
   const frames = Math.ceil(seconds * sampleRate)

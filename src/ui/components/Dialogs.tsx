@@ -338,6 +338,7 @@ const SHORTCUTS: [string, string][] = [
   ['H', 'Hum something in'],
   ['T', 'Add an instrument'],
   ['I', 'Ideas — chords, bass, drums'],
+  ['M', 'Mashup Lab'],
   ['L', 'Toggle loop'],
   ['N', 'Metronome'],
   ['⌘/Ctrl + Z', 'Undo'],

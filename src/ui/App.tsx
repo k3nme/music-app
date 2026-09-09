@@ -14,13 +14,14 @@ import { ExportDialog, FilesDialog, HelpDialog, ShareDialog, Welcome } from './c
 import { HumStudio } from './components/HumStudio'
 import { IdeasButton, IdeasPanel } from './components/IdeasPanel'
 import { InstrumentPicker } from './components/InstrumentPicker'
+import { MashupLab } from './components/MashupLab'
 import { Keyboard } from './components/Keyboard'
 import { Mixer } from './components/Mixer'
 import { PianoRoll } from './components/PianoRoll'
 import { TopBar } from './components/TopBar'
 import { Note as NoteIcon, Piano, Sliders } from './icons'
 
-type Dialog = 'files' | 'export' | 'share' | 'ideas' | null
+type Dialog = 'files' | 'export' | 'share' | 'ideas' | 'mashup' | null
 
 export function App() {
   const project = useStore((s) => s.project)
@@ -150,6 +151,9 @@ export function App() {
         case 'KeyI':
           if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'ideas' ? null : 'ideas')) }
           break
+        case 'KeyM':
+          if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'mashup' ? null : 'mashup')) }
+          break
         case 'KeyL':
           if (!letterShortcutsLive) break
           state.setUI({ loopEnabled: !state.loopEnabled })
@@ -201,6 +205,7 @@ export function App() {
         onOpenFiles={() => setDialog('files')}
         onExport={() => setDialog('export')}
         onShare={() => setDialog('share')}
+        onMashup={() => setDialog('mashup')}
       />
 
       <div className="main">
@@ -277,6 +282,7 @@ export function App() {
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
       {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
       {dialog === 'ideas' && <IdeasPanel onClose={() => setDialog(null)} />}
+      {dialog === 'mashup' && <MashupLab onClose={() => setDialog(null)} />}
 
       {status && <div className={`toast ${status.tone}`}>{status.message}</div>}
     </div>
