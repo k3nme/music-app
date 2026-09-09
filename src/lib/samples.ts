@@ -9,7 +9,7 @@
  * demand, so reopening a project doesn't have to hold every song in RAM.
  */
 
-import type { AudioAnalysis } from '../audio/analysis/audio'
+import { computePeaks, type AudioAnalysis } from '../audio/analysis/audio'
 import { uid } from './id'
 import { decodeWav, encodeWav } from './wav'
 
@@ -30,7 +30,18 @@ export interface SampleMeta {
   /** Set when this sample was derived from another (a separated stem). */
   sourceId?: string
   stem?: string
+  /**
+   * Min/max pairs for drawing. Kept on the meta rather than only inside
+   * `analysis`, because audio generated in-app (stems, mashup bounces,
+   * recordings) needs a waveform immediately and may never be fully analysed.
+   */
+  peaks?: Float32Array
   analysis?: AudioAnalysis
+}
+
+/** Peaks for drawing, wherever they happen to live. */
+export function samplePeaks(meta: SampleMeta | undefined): Float32Array | undefined {
+  return meta?.peaks ?? meta?.analysis?.peaks
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +170,8 @@ export async function importAudioFile(
     byteSize: bytes.byteLength,
     mime: file.type || 'audio/wav',
     createdAt: Date.now(),
+    // Draw something straight away; full analysis follows in a worker.
+    peaks: computePeaks(buffer.getChannelData(0)),
   }
 
   rememberSample(meta, buffer)
@@ -182,6 +195,7 @@ export async function createSample(
     byteSize: blob.size,
     mime: 'audio/wav',
     createdAt: Date.now(),
+    peaks: computePeaks(channels[0]),
     ...extra,
   }
   rememberSample(meta, buffer)
@@ -237,6 +251,7 @@ export function ensureSample(ctx: BaseAudioContext, id: string): Promise<AudioBu
     try {
       const buffer = await ctx.decodeAudioData(bytes.slice(0))
       buffers.set(id, buffer)
+      backfillPeaks(id, buffer)
       return buffer
     } catch {
       // Fall back to the built-in WAV reader for anything the platform
@@ -245,6 +260,7 @@ export function ensureSample(ctx: BaseAudioContext, id: string): Promise<AudioBu
       if (!pcm) return null
       const buffer = channelsToBuffer(ctx, pcm.channels, pcm.sampleRate)
       buffers.set(id, buffer)
+      backfillPeaks(id, buffer)
       return buffer
     } finally {
       pending.delete(id)
@@ -253,6 +269,17 @@ export function ensureSample(ctx: BaseAudioContext, id: string): Promise<AudioBu
 
   pending.set(id, load)
   return load
+}
+
+/**
+ * Peaks are dropped when a sample travels (they don't survive JSON), so they
+ * are rebuilt the first time the audio is decoded again.
+ */
+function backfillPeaks(id: string, buffer: AudioBuffer) {
+  const meta = metas.get(id)
+  if (!meta || (meta.peaks && meta.peaks.length > 0)) return
+  meta.peaks = computePeaks(buffer.getChannelData(0))
+  metas.set(id, meta)
 }
 
 /** Load every sample a project refers to. Returns the ids it couldn't find. */

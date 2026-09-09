@@ -5,7 +5,7 @@ import {
   audioClipLengthBeats, audioClipsForTrack, clipsForTrack,
   type AudioClip, type Clip, type Track,
 } from '../../music/project'
-import { getSampleMeta } from '../../lib/samples'
+import { getSampleMeta, samplePeaks } from '../../lib/samples'
 import { importAudioIntoProject, looksLikeAudio } from '../../lib/importAudio'
 import { Waveform } from './Waveform'
 import { useStore } from '../../state/store'
@@ -280,13 +280,17 @@ function TrackHead({ track, selected, playing }: { track: Track; selected: boole
       </div>
 
       <div className="track-btns">
-        <button
-          className="track-inst"
-          onClick={(e) => { e.stopPropagation(); setUI({ instrumentPickerFor: track.id }) }}
-          title="Change instrument"
-        >
-          {preset.name}
-        </button>
+        {track.kind === 'audio' ? (
+          <span className="track-inst" style={{ cursor: 'default' }}>Audio</span>
+        ) : (
+          <button
+            className="track-inst"
+            onClick={(e) => { e.stopPropagation(); setUI({ instrumentPickerFor: track.id }) }}
+            title="Change instrument"
+          >
+            {preset.name}
+          </button>
+        )}
         <div className="spacer" />
         <button
           className={`mini ${track.muted ? 'on' : ''}`}
@@ -442,7 +446,7 @@ function AudioClipView({ clip, hue, bpm, ppb, selected, snapBeat }: {
       </div>
       <div className="clip-wave">
         <Waveform
-          peaks={meta?.analysis?.peaks}
+          peaks={samplePeaks(meta)}
           from={clip.reverse ? 1 - to : from}
           to={clip.reverse ? 1 - from : to}
           height={34}

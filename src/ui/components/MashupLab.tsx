@@ -9,7 +9,7 @@ import {
 } from '../../lib/mashup'
 import {
   bufferToChannels, createSample, ensureSample, getSampleBuffer, importAudioFile,
-  knownSamples, updateSampleMeta,
+  knownSamples, samplePeaks, updateSampleMeta,
 } from '../../lib/samples'
 import { toKeySpec } from '../../music/matching'
 import { NOTE_NAMES } from '../../music/theory'
@@ -414,7 +414,7 @@ export function MashupLab({ onClose }: { onClose(): void }) {
 
                   <div className="deck-wave">
                     <Waveform
-                      peaks={deck.analysis.peaks}
+                      peaks={samplePeaks(deck.meta) ?? deck.analysis.peaks}
                       height={54}
                       color={`hsl(${hue} 78% 66%)`}
                     />

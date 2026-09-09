@@ -27,6 +27,18 @@ interface BundleHeader {
   samples: { meta: SampleMeta; byteLength: number }[]
 }
 
+/**
+ * Waveform peaks are Float32Arrays. JSON turns those into objects with one
+ * numbered key per sample — thousands of them, per file — so they are stripped
+ * on the way out and recomputed when the audio is next decoded.
+ */
+function stripDrawingData(meta: SampleMeta): SampleMeta {
+  const { peaks: _peaks, analysis, ...rest } = meta
+  return analysis
+    ? { ...rest, analysis: { ...analysis, peaks: new Float32Array(0) } }
+    : rest
+}
+
 /** Pack a project and every sample it uses into one blob. */
 export async function createBundle(project: Project): Promise<Blob> {
   const ids = projectSampleIds(project)
@@ -37,7 +49,7 @@ export async function createBundle(project: Project): Promise<Blob> {
     const blob = await getSampleBlob(id)
     const meta = getSampleMeta(id)
     if (!blob || !meta) continue
-    samples.push({ meta, byteLength: blob.size })
+    samples.push({ meta: stripDrawingData(meta), byteLength: blob.size })
     parts.push(blob)
   }
 

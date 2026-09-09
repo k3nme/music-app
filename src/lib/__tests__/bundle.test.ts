@@ -97,3 +97,21 @@ describe('bundle format', () => {
     expect(bundleFilename(emptyProject('***'))).toBe('overtone.overtone')
   })
 })
+
+describe('bundle size', () => {
+  it('does not serialise waveform peaks into the header', async () => {
+    // A Float32Array JSON-encodes as an object with one key per sample, which
+    // would add hundreds of kilobytes per file to every bundle.
+    const { createBundle } = await import('../bundle')
+    const { rememberSample } = await import('../samples')
+    const project = emptyProject('Peaky')
+    rememberSample({
+      id: 's-peaks', name: 'Big', durationSec: 1, sampleRate: 44100, channels: 1,
+      byteSize: 10, mime: 'audio/wav', createdAt: 1,
+      peaks: new Float32Array(4000).fill(0.5),
+    })
+    // No audio clips reference it, so the bundle should be tiny regardless.
+    const bundle = await createBundle(project)
+    expect(bundle.size).toBeLessThan(4000)
+  })
+})

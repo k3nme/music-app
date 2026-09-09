@@ -4,7 +4,7 @@ import { separateStemsInWorker } from '../../audio/workers'
 import { STEM_NAMES, type StemName } from '../../audio/spectral/stems'
 import { describeKey } from '../../lib/importAudio'
 import {
-  bufferToChannels, createSample, ensureSample, getSampleBuffer, getSampleMeta,
+  bufferToChannels, createSample, ensureSample, getSampleBuffer, getSampleMeta, samplePeaks,
 } from '../../lib/samples'
 import { audioClipLengthBeats, type AudioClip, type Track } from '../../music/project'
 import { planMatch, tempoStrain, toKeySpec } from '../../music/matching'
@@ -122,7 +122,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
       <div className="wave-panel">
         <Waveform
-          peaks={analysis?.peaks}
+          peaks={samplePeaks(meta)}
           from={clip.offsetSec / total}
           to={Math.min(1, (clip.offsetSec + clip.sourceDurationSec) / total)}
           height={90}
