@@ -37,6 +37,11 @@ export interface InstrumentInstance {
    * schedule was being built. Live instruments don't need it.
    */
   finalize?(): void
+  /**
+   * Some sounds are written in beats rather than seconds — a riser has to end
+   * exactly on the drop — so they need to know the tempo.
+   */
+  setTempo?(bpm: number): void
   dispose(): void
 }
 

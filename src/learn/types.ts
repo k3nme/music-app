@@ -20,6 +20,10 @@ export interface DemoVoice {
   notes: DemoNote[]
   /** 0..1, relative level for this voice. */
   gain?: number
+  /** Sidechain duck depth, 0..1 — the only way to teach pumping is to hear it. */
+  pump?: number
+  /** How often that duck repeats, in beats. Defaults to every beat. */
+  pumpBeats?: number
 }
 
 export interface Demo {

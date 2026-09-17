@@ -1,21 +1,27 @@
 /**
  * The curriculum, assembled.
  *
- * Eight modules, ordered so each builds on the last: what sound is, what notes
+ * Ten modules, ordered so each builds on the last: what sound is, what notes
  * are, how they group into scales and chords, how rhythm works, how every
- * instrument family physically makes sound, how parts fit together, and where
- * all of that lives in this app.
+ * instrument family physically makes sound, what the rest of the world built
+ * with those ideas, how parts fit together, how dance music is produced, and
+ * where all of that lives in this app.
  */
 
+import { electronicModule } from './modules/electronic'
 import { FUNDAMENTAL_MODULES } from './modules/fundamentals'
 import { instrumentsModule } from './modules/instruments'
-import { MAKING_MODULES } from './modules/making'
+import { arrangingModule, overtoneModule } from './modules/making'
+import { worldModule } from './modules/world'
 import type { Lesson, Module } from './types'
 
 export const CURRICULUM: Module[] = [
   ...FUNDAMENTAL_MODULES,
   instrumentsModule,
-  ...MAKING_MODULES,
+  worldModule,
+  arrangingModule,
+  electronicModule,
+  overtoneModule,
 ]
 
 export const ALL_LESSONS: Lesson[] = CURRICULUM.flatMap((module) => module.lessons)

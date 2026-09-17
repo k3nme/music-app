@@ -53,6 +53,7 @@ export function InstrumentPicker() {
     if (!id) return
     engine.ensureTrack(id, preset.id, {
       volume: 0.75, pan: 0, muted: false, reverbSend: 0.18, delaySend: 0, drive: 0, tone: 20000,
+      pump: 0, pumpBeats: 1,
     })
 
     if (preset.engine === 'drum') {

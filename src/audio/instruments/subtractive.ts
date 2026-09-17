@@ -34,6 +34,14 @@ export interface SubtractiveParams {
   vibratoRate: number
   vibratoDepth: number // cents
   vibratoDelay: number
+  /** Filter wobble: rate in Hz, depth in octaves. The dubstep/house gate move. */
+  filterLfoRate: number
+  filterLfoDepth: number
+  /** 'sine' wobbles, 'square' gates on and off, 'sawtooth' pumps. */
+  filterLfoShape: OscillatorType
+  /** Tremolo on the amplitude, in Hz. Vibraphone, gated pads, helicopter. */
+  tremoloRate: number
+  tremoloDepth: number
   glide: number
   chorus: number
   drive: number
@@ -48,6 +56,8 @@ const DEFAULTS: SubtractiveParams = {
   fa: 0.005, fd: 0.25, fs: 0.4, fr: 0.2,
   a: 0.005, d: 0.15, s: 0.7, r: 0.25,
   vibratoRate: 5, vibratoDepth: 0, vibratoDelay: 0.35,
+  filterLfoRate: 0, filterLfoDepth: 0, filterLfoShape: 'sine',
+  tremoloRate: 0, tremoloDepth: 0,
   glide: 0, chorus: 0, drive: 0, gain: 0.8,
 }
 
@@ -117,8 +127,37 @@ export function createSubtractive(ctx: BaseAudioContext, preset: PresetBase): In
         Math.max(0.01, p.fd / 3),
       )
     }
+    // Filter LFO — the wobble. Depth is in octaves, so it scales with the
+    // cutoff rather than sounding different at every pitch.
+    if (p.filterLfoDepth > 0.001 && p.filterLfoRate > 0.001) {
+      const lfo = ctx.createOscillator()
+      lfo.type = p.filterLfoShape
+      lfo.frequency.value = p.filterLfoRate
+      const depth = ctx.createGain()
+      // Convert octaves to Hz around the current cutoff.
+      depth.gain.value = base * (Math.pow(2, p.filterLfoDepth) - 1) * 0.5
+      lfo.connect(depth).connect(filter.frequency)
+      lfo.start(when)
+      sources.push(lfo)
+    }
+
     filter.connect(amp)
-    amp.connect(chainHead)
+
+    if (p.tremoloDepth > 0.001 && p.tremoloRate > 0.001) {
+      const trem = ctx.createGain()
+      trem.gain.value = 1 - p.tremoloDepth * 0.5
+      const lfo = ctx.createOscillator()
+      lfo.type = 'sine'
+      lfo.frequency.value = p.tremoloRate
+      const depth = ctx.createGain()
+      depth.gain.value = p.tremoloDepth * 0.5
+      lfo.connect(depth).connect(trem.gain)
+      lfo.start(when)
+      sources.push(lfo)
+      amp.connect(trem).connect(chainHead)
+    } else {
+      amp.connect(chainHead)
+    }
 
     // --- pitch modulation shared by every oscillator in the voice ----------
     const pitchMod = ctx.createGain() // outputs cents

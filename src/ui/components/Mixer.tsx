@@ -76,6 +76,15 @@ function Fader({ value, onChange, level }: { value: number; onChange(v: number):
   )
 }
 
+/** How often the duck repeats. Every beat is the house default; half a bar
+ *  suits slower, wider records. */
+const PUMP_RATES = [
+  { beats: 0.5, label: '\u00bd' },
+  { beats: 1, label: '1' },
+  { beats: 2, label: '2' },
+  { beats: 4, label: '4' },
+]
+
 function Strip({ track, playing, selected }: { track: Track; playing: boolean; selected: boolean }) {
   const { updateChannel, toggleMute, toggleSolo, select } = useStore.getState()
   const level = useLevel(track.id, playing)
@@ -121,6 +130,22 @@ function Strip({ track, playing, selected }: { track: Track; playing: boolean; s
       <Knob label="Tone" value={c.tone} min={300} max={20000} step={50}
         format={(v) => (v >= 19000 ? 'open' : `${(v / 1000).toFixed(1)}k`)}
         onChange={(v) => updateChannel(track.id, { tone: v })} />
+      <Knob label="Pump" value={c.pump} min={0} max={1}
+        format={(v) => (v < 0.005 ? 'off' : `${Math.round(v * 100)}`)}
+        onChange={(v) => updateChannel(track.id, { pump: v })} />
+      {c.pump > 0.005 && (
+        <div style={{ display: 'flex', gap: 4 }}>
+          {PUMP_RATES.map((rate) => (
+            <button
+              key={rate.beats}
+              className={`mini ${Math.abs(c.pumpBeats - rate.beats) < 0.001 ? 'on' : ''}`}
+              style={{ flex: 1 }}
+              onClick={() => updateChannel(track.id, { pumpBeats: rate.beats })}
+              title={`Duck once every ${rate.label}`}
+            >{rate.label}</button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

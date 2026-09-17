@@ -38,6 +38,11 @@ const INTERFACE_TERMS: GlossaryEntry[] = [
   { term: 'Send', meaning: 'How much of this track is fed to a shared effect like reverb or delay.' },
   { term: 'Drive', meaning: 'Deliberate distortion. A little adds warmth and grit; a lot is an effect in itself.' },
   { term: 'Tone', meaning: 'Rolls off the high frequencies. Use it to stop two parts fighting.', lessonId: 'arrange-mixing' },
+  {
+    term: 'Pump',
+    meaning: 'Duck this track on every beat, the way dance records breathe around the kick. Turn it up on pads and chords, leave it off the drums.',
+    lessonId: 'electronic-sidechain',
+  },
   { term: 'Fader', meaning: 'A volume slider.' },
   { term: 'Master', meaning: 'Where every track ends up mixed together, just before it reaches your ears.' },
   { term: 'Delay', meaning: 'An echo, timed to the beat.' },

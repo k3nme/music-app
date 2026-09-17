@@ -4,8 +4,9 @@
  */
 
 import {
-  buildChannel, buildMaster, type MasterChain,
+  buildChannel, buildMaster, schedulePumpPoints, type MasterChain,
 } from '../audio/engine'
+import { pumpPoints } from '../audio/pump'
 import { createInstrument, getPreset, initPluck } from '../audio/instruments'
 import {
   audibleTrackIds, audioClipLengthBeats, audioClipSpeed, contentEndBeat, type Project,
@@ -62,11 +63,25 @@ export async function renderProject(project: Project, options: RenderOptions = {
     if (track.kind === 'audio') continue
     const instrument = createInstrument(ctx, getPreset(track.presetId))
     instrument.output.connect(channel.input)
+    instrument.setTempo?.(project.bpm)
     instruments.set(track.id, instrument)
   }
 
   // Schedule every note in one pass — offline rendering has no lookahead limit.
   const lead = 0.02
+
+  // The sidechain duck is part of the mix, not a live-only effect: a bounce
+  // without it is a different record.
+  for (const track of project.tracks) {
+    const channel = channels.get(track.id)
+    if (!channel || track.channel.pump <= 0.001) continue
+    schedulePumpPoints(
+      channel.pump.gain,
+      pumpPoints(track.channel.pump, track.channel.pumpBeats, startBeat, endBeat),
+      (beat) => (beat - startBeat) * beatSec + lead,
+    )
+  }
+
   for (const clip of project.clips) {
     if (!audible.has(clip.trackId)) continue
     const instrument = instruments.get(clip.trackId)

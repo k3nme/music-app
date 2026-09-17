@@ -296,5 +296,3 @@ export const overtoneModule: Module = {
     },
   ],
 }
-
-export const MAKING_MODULES: Module[] = [arrangingModule, overtoneModule]

@@ -12,6 +12,7 @@ import { buildImpulseResponse, driveCurve, limiterCurve } from './dsp'
 import { createInstrument, getPreset, initPluck } from './instruments'
 import type { InstrumentInstance, NoteHandle, PresetBase } from './types'
 import { clamp } from './types'
+import { pumpPoints, type PumpPoint } from './pump'
 
 export interface QueuedNote {
   trackId: string
@@ -57,10 +58,15 @@ export interface ChannelSettings {
   drive: number
   /** Low-pass in Hz; 20000 is effectively off. */
   tone: number
+  /** Sidechain duck depth, 0..1. The four-to-the-floor breathing of dance music. */
+  pump: number
+  /** How often the duck repeats, in beats. 1 is every kick. */
+  pumpBeats: number
 }
 
 export const DEFAULT_CHANNEL: ChannelSettings = {
   volume: 0.8, pan: 0, muted: false, reverbSend: 0.12, delaySend: 0, drive: 0, tone: 20000,
+  pump: 0, pumpBeats: 1,
 }
 
 export interface MasterSettings {
@@ -77,7 +83,7 @@ export const DEFAULT_MASTER: MasterSettings = {
   delayTimeBeats: 0.75, delayFeedback: 0.34, delayTone: 3200,
 }
 
-/** One track's signal path: instrument -> drive -> tone -> pan -> fader -> master. */
+/** One track's signal path: instrument -> drive -> tone -> pan -> fader -> pump -> master. */
 export interface Channel {
   input: GainNode
   driveShaper: WaveShaperNode
@@ -86,6 +92,8 @@ export interface Channel {
   tone: BiquadFilterNode
   panner: StereoPannerNode
   fader: GainNode
+  /** Sidechain duck. Sits after the fader so the sends breathe with the track. */
+  pump: GainNode
   reverbSend: GainNode
   delaySend: GainNode
   analyser: AnalyserNode
@@ -194,6 +202,9 @@ export function buildChannel(ctx: BaseAudioContext, master: MasterChain, setting
   const fader = ctx.createGain()
   fader.gain.value = settings.muted ? 0 : settings.volume
 
+  const pump = ctx.createGain()
+  pump.gain.value = 1
+
   const analyser = ctx.createAnalyser()
   analyser.fftSize = 512
   analyser.smoothingTimeConstant = 0.75
@@ -206,12 +217,13 @@ export function buildChannel(ctx: BaseAudioContext, master: MasterChain, setting
   input.connect(driveDry).connect(tone)
   input.connect(driveShaper).connect(driveWet).connect(tone)
   tone.connect(panner).connect(fader)
-  fader.connect(analyser)
-  fader.connect(master.bus)
-  fader.connect(reverbSend).connect(master.fx.reverbIn)
-  fader.connect(delaySend).connect(master.fx.delayIn)
+  fader.connect(pump)
+  pump.connect(analyser)
+  pump.connect(master.bus)
+  pump.connect(reverbSend).connect(master.fx.reverbIn)
+  pump.connect(delaySend).connect(master.fx.delayIn)
 
-  return { input, driveShaper, driveWet, driveDry, tone, panner, fader, reverbSend, delaySend, analyser, settings }
+  return { input, driveShaper, driveWet, driveDry, tone, panner, fader, pump, reverbSend, delaySend, analyser, settings }
 }
 
 export function applyChannelSettings(ch: Channel, s: ChannelSettings, when: number) {
@@ -229,9 +241,30 @@ export function applyChannelSettings(ch: Channel, s: ChannelSettings, when: numb
   ch.settings = { ...s }
 }
 
+/**
+ * Write a pump envelope onto a gain param. A cycle is scheduled whole or not at
+ * all — dropping its opening `set` and keeping the ramps would slide the gain
+ * down from wherever it happened to be.
+ */
+export function schedulePumpPoints(
+  param: AudioParam,
+  points: PumpPoint[],
+  timeAt: (beat: number) => number,
+  notBefore = 0,
+) {
+  let skipping = false
+  for (const point of points) {
+    const time = timeAt(point.beat)
+    if (point.kind === 'set') skipping = time < notBefore
+    if (skipping) continue
+    if (point.kind === 'set') param.setValueAtTime(point.value, time)
+    else param.linearRampToValueAtTime(point.value, time)
+  }
+}
+
 export function disposeChannel(ch: Channel) {
   for (const n of [ch.input, ch.driveShaper, ch.driveWet, ch.driveDry, ch.tone,
-    ch.panner, ch.fader, ch.reverbSend, ch.delaySend, ch.analyser]) {
+    ch.panner, ch.fader, ch.pump, ch.reverbSend, ch.delaySend, ch.analyser]) {
     try { n.disconnect() } catch { /* noop */ }
   }
 }
@@ -314,6 +347,8 @@ export class AudioEngine {
   private activeAudio = new Set<{ node: AudioBufferSourceNode; gain: GainNode }>()
   /** Clip instances already started for the current loop pass. */
   private startedAudio = new Set<string>()
+  /** Last pump cycle scheduled per track, in timeline beats. */
+  private pumpUntil = new Map<string, number>()
 
   bpm = 120
   loopEnabled = true
@@ -395,6 +430,8 @@ export class AudioEngine {
       const preset: PresetBase = getPreset(presetId)
       const inst = createInstrument(this.ctx, preset)
       inst.output.connect(channel.input)
+      // Sounds written in beats (risers, rolls) need the tempo up front.
+      inst.setTempo?.(this.bpm)
       this.instruments.set(trackId, inst)
       this.presetOf.set(trackId, presetId)
     }
@@ -403,7 +440,22 @@ export class AudioEngine {
   updateChannel(trackId: string, settings: ChannelSettings) {
     const ch = this.channels.get(trackId)
     if (!ch || !this.ctx) return
+    const pumpChanged = ch.settings.pump !== settings.pump
+      || ch.settings.pumpBeats !== settings.pumpBeats
     applyChannelSettings(ch, settings, this.ctx.currentTime)
+    if (pumpChanged) this.resetPump(trackId, ch)
+  }
+
+  /** Drop the scheduled duck and lift the channel back to unity. The next tick
+   *  starts the envelope again from the following cycle. */
+  private resetPump(trackId: string, ch: Channel) {
+    const t = this.currentTime
+    this.pumpUntil.delete(trackId)
+    try {
+      ch.pump.gain.cancelScheduledValues(t)
+      ch.pump.gain.setValueAtTime(ch.pump.gain.value, t)
+      ch.pump.gain.linearRampToValueAtTime(1, t + 0.05)
+    } catch { /* no context yet */ }
   }
 
   removeTrack(trackId: string) {
@@ -414,6 +466,7 @@ export class AudioEngine {
     const ch = this.channels.get(trackId)
     if (ch) disposeChannel(ch)
     this.channels.delete(trackId)
+    this.pumpUntil.delete(trackId)
   }
 
   getChannel(trackId: string): Channel | undefined {
@@ -454,6 +507,7 @@ export class AudioEngine {
     } else {
       this.bpm = bpm
     }
+    for (const inst of this.instruments.values()) inst.setTempo?.(bpm)
     if (this.master) {
       this.master.fx.delayNode.delayTime.setTargetAtTime(
         clamp((60 / bpm) * this.masterSettings.delayTimeBeats, 0.01, 4), t, 0.05,
@@ -497,6 +551,7 @@ export class AudioEngine {
     this.cursorBeat = start
     this.lastMetronomeBeat = Math.floor(start) - 1
     this.startedAudio.clear()
+    for (const [id, ch] of this.channels) this.resetPump(id, ch)
     this.playing = true
     this.ticker.start(TICK_MS)
     this.tick()
@@ -511,6 +566,7 @@ export class AudioEngine {
     for (const inst of this.instruments.values()) inst.allNotesOff(t)
     this.stopAllAudio(t)
     this.startedAudio.clear()
+    for (const [id, ch] of this.channels) this.resetPump(id, ch)
   }
 
   /** Stop every playing audio clip, with a short ramp so it doesn't click. */
@@ -535,6 +591,9 @@ export class AudioEngine {
     const t = this.currentTime
     for (const inst of this.instruments.values()) inst.allNotesOff(t)
     this.stopAllAudio(t)
+    // Drop any duck still queued, or it would keep ducking silence — and then
+    // interleave with whatever gets scheduled next.
+    for (const [id, ch] of this.channels) this.resetPump(id, ch)
   }
 
   /** Drop any playing instance of a clip, so an edit takes effect immediately. */
@@ -627,6 +686,7 @@ export class AudioEngine {
       }
 
       this.scheduleAudio(songStart, songEnd, offset, now)
+      this.schedulePumps(songStart, songEnd, offset, now)
 
       if (this.metronome) this.scheduleMetronome(songStart, songEnd, offset)
       this.cursorBeat = chunkEnd
@@ -706,6 +766,32 @@ export class AudioEngine {
       node.onended = () => {
         this.activeAudio.delete(active)
         try { gain.disconnect() } catch { /* noop */ }
+      }
+    }
+  }
+
+  /**
+   * Duck every channel that asked for it. The grid does the work a sidechain
+   * compressor would: the cycle sits on absolute song beats, so it lands on the
+   * downbeat whether or not the drum track is playing anything.
+   */
+  private schedulePumps(fromBeat: number, toBeat: number, offset: number, now: number) {
+    for (const [trackId, ch] of this.channels) {
+      if (ch.settings.pump <= 0.001) continue
+      const points = pumpPoints(ch.settings.pump, ch.settings.pumpBeats, fromBeat, toBeat)
+      if (!points.length) continue
+      const last = this.pumpUntil.get(trackId) ?? -Infinity
+      let skipping = false
+      for (const point of points) {
+        const timelineBeat = point.beat + offset
+        const time = this.timeAt(timelineBeat)
+        if (point.kind === 'set') {
+          skipping = timelineBeat <= last || time < now
+          if (!skipping) this.pumpUntil.set(trackId, timelineBeat)
+        }
+        if (skipping) continue
+        if (point.kind === 'set') ch.pump.gain.setValueAtTime(point.value, time)
+        else ch.pump.gain.linearRampToValueAtTime(point.value, time)
       }
     }
   }
