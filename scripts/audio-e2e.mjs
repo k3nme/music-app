@@ -24,7 +24,7 @@ page.on('pageerror', (e) => errors.push(String(e)))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 
 await page.goto(process.env.APP_URL ?? 'http://localhost:5173', { waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Start empty' }).click()
+await page.getByRole('button', { name: 'or open the empty studio' }).click()
 await page.waitForSelector('.app')
 await page.waitForFunction(() => Boolean(window.__overtone))
 

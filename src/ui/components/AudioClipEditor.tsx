@@ -10,6 +10,7 @@ import { audioClipLengthBeats, type AudioClip, type Track } from '../../music/pr
 import { planMatch, tempoStrain, toKeySpec } from '../../music/matching'
 import { NOTE_NAMES } from '../../music/theory'
 import { useStore } from '../../state/store'
+import { Term } from './Term'
 import { Waveform } from './Waveform'
 import { Wand } from '../icons'
 
@@ -133,7 +134,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
       <div className="inspector-grid">
         <div className="control">
           <div className="control-head">
-            <span className="label">Follow project tempo</span>
+            <Term of="Warp"><span className="label">Follow project tempo</span></Term>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
@@ -162,7 +163,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
         <div className="control">
           <div className="control-head">
-            <span className="label">Source tempo</span>
+            <Term of="Source tempo"><span className="label">Source tempo</span></Term>
             <span className="mono" style={{ fontSize: 11 }}>{clip.originalBpm?.toFixed(1) ?? '—'}</span>
           </div>
           <input
@@ -187,7 +188,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
         <div className="control">
           <div className="control-head">
-            <span className="label">Transpose</span>
+            <Term of="Transpose"><span className="label">Transpose</span></Term>
             <span className="mono" style={{ fontSize: 11 }}>
               {clip.pitchSemitones > 0 ? '+' : ''}{clip.pitchSemitones.toFixed(2)} st
             </span>
@@ -204,7 +205,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
         <div className="control">
           <div className="control-head">
-            <span className="label">Gain</span>
+            <Term of="Gain"><span className="label">Gain</span></Term>
             <span className="mono" style={{ fontSize: 11 }}>
               {(20 * Math.log10(Math.max(0.001, clip.gain))).toFixed(1)} dB
             </span>
@@ -221,7 +222,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
         <div className="control">
           <div className="control-head">
-            <span className="label">Fades</span>
+            <Term of="Fades"><span className="label">Fades</span></Term>
             <span className="mono" style={{ fontSize: 11 }}>
               {clip.fadeInBeats.toFixed(2)} / {clip.fadeOutBeats.toFixed(2)}
             </span>
@@ -240,7 +241,7 @@ export function AudioClipEditor({ clip, track }: { clip: AudioClip; track: Track
 
         <div className="control">
           <div className="control-head">
-            <span className="label">Start offset</span>
+            <Term of="Start offset"><span className="label">Start offset</span></Term>
             <span className="mono" style={{ fontSize: 11 }}>{clip.offsetSec.toFixed(2)}s</span>
           </div>
           <input

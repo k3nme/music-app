@@ -19,6 +19,7 @@ node scripts/hum-e2e.mjs      # hum capture with a fake mic
 node scripts/chords-e2e.mjs   # chord capture with a fake mic
 node scripts/audio-e2e.mjs    # import, warp, separate, render, bundle
 node scripts/mashup-e2e.mjs   # the Mashup Lab, end to end
+node scripts/learn-e2e.mjs    # first-run doors, Learn mode, glossary
 ```
 
 ## Ground rules
@@ -42,6 +43,14 @@ Keep it that way — it is what makes any of this testable.
 **Audio clip length is derived.** `audioClipLengthBeats(clip, bpm)` computes it
 from the source duration and the warp speed. Never store it; a tempo change
 would leave it stale.
+
+**Lessons are pure data.** `src/learn/` holds the curriculum as plain objects
+with no audio imports, so it can be checked in tests — and it is: every demo is
+validated against the real instrument library. Adding a lesson means adding
+data, not components.
+
+**Every concept gets a sound.** A lesson that explains something without a
+playable demo is not finished. The test enforces this for concept lessons.
 
 **Heavy DSP goes in a worker.** Anything that takes more than a frame — analysis,
 separation, warping — goes through `src/audio/workers`. Surface it with
@@ -82,6 +91,11 @@ change the project and let it flow.
   do the work or say so.
 - **Renders follow content, not the canvas.** `project.lengthBeats` is a working
   area. Bouncing to it pads the file with silence.
+- **Guided mode is the default for new users.** `experience === 'guided'` hides
+  the key/scale selects and the grid controls. If you add a control that assumes
+  DAW knowledge, check what it does in guided mode before shipping it.
+- **The browser suites open the app through the first-run doors.** If you change
+  the door labels, five test scripts need updating with them.
 
 ## Testing what matters
 
