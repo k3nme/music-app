@@ -32,10 +32,13 @@ Two of them need no music knowledge at all. New users land in a simplified
 view that hides the key and scale controls and suggests a next step based on
 what the project actually contains; one click leaves it for good.
 
-**Learn music** is a full course built into the app: eight modules, 32
-lessons, covering what sound is, notes and intervals, scales (including ragas,
-maqam and modes), chords and progressions, rhythm and groove, every instrument
-family and how it physically makes sound, then arrangement and mixing.
+**Learn music** is a full course built into the app: ten modules, 42 lessons,
+covering what sound is, notes and intervals, scales (including ragas, maqam and
+modes), chords and progressions, rhythm and groove, every instrument family and
+how it physically makes sound, the instruments and cross-rhythms of West
+Africa, the Middle East, India, East Asia and Latin America, then arrangement,
+mixing, and how dance music is actually produced — the grid, the sidechain
+pump, builds and drops, and where the familiar synth sounds come from.
 
 ![A lesson](docs/screenshot-learn.png)
 
@@ -99,20 +102,33 @@ song cut 30 cents flat lands in tune rather than between two semitones.
 ### Build the track
 
 Arrangement timeline with draggable audio and MIDI clips, a piano roll, a drum
-step grid, a mixer with per-channel sends, a playable keyboard that records into
-a clip, and undo/redo throughout.
+step grid, a mixer with per-channel sends, drive, tone and a tempo-synced
+sidechain **pump** (the duck that makes dance records breathe — scheduled off
+the grid rather than triggered by the kick, so it lands whatever the drums are
+playing, and it is in the bounce as well as the monitor), a playable keyboard
+that records into a clip, and undo/redo throughout.
 
 ![The Overtone studio](docs/screenshot-studio.png)
 
-**75 instruments, none of them sampled.** Every instrument is synthesised from
-scratch, which is why the app is ~130 KB gzipped and works offline. Keys,
-guitars, bowed strings, winds, brass, mallets, synths, bass, voices, drum kits,
-and a deliberate spread of world instruments (sitar with a real jawari bridge
-buzz, koto, oud, bansuri, shakuhachi, kalimba, santoor, erhu, tabla).
+**157 instruments, none of them sampled.** Every instrument is synthesised from
+scratch, which is why the app is ~185 KB gzipped and works offline. 134 melodic
+instruments and 23 drum kits: keys, guitars, bowed strings, winds, brass,
+mallets, synths, bass, voices, and a deliberate spread of world instruments
+(sitar with a real jawari bridge buzz, kora, guzheng, pipa, duduk, balafon,
+mbira, oud, bansuri, shakuhachi, kalimba, santoor, erhu, gamelan).
+
+The dance-music end is covered properly too: supersaws, hoovers, house stabs,
+trance plucks, gated pads and vocal chops; wobble, Reese, neuro, donk and 808
+basses; a transitions kit of risers, downlifters, impacts, sweeps and snare
+rolls written in **bars** rather than seconds, so they still land on the
+downbeat when you change the tempo; and kits for techno, breakbeat, disco,
+amapiano, afrobeats, afro house, West African drums, darbuka, dhol, samba,
+taiko and reggaeton.
 
 **Ideas.** Chord progressions fitted bar-by-bar to what you've written, bass
-lines that follow the harmony, drum patterns in six styles, harmony lines that
-stay in key. All local, all from music theory, all undoable.
+lines that follow the harmony, drum patterns in twelve styles (house, boom bap,
+trap, rock, teental, latin, amapiano, afrobeats, afro house, techno, breakbeat
+and reggaeton), harmony lines that stay in key. All local, all from music theory, all undoable.
 
 **Getting work out.** A WAV rendered offline through the exact signal chain you
 hear; every track bounced as its own stem; MIDI for another DAW; a project
@@ -131,8 +147,14 @@ src/
       subtractive.ts     oscillators → filter → amp  (pads, leads, winds, bowed)
       fm.ts              routable operators          (EPs, bells, mallets, brass)
       pluck.ts           extended Karplus-Strong     (guitars, sitar, harp, piano)
-      drums.ts           procedural percussion
-      presets.ts         the instrument library
+      drums.ts           procedural percussion, incl. log drums and build FX
+      preset-kit.ts      the builders every preset file shares
+      presets.ts         the instrument library, and what it all adds up to
+      presets-electronic.ts  EDM synths, basses, and the transitions kit
+      presets-african.ts     kora, ngoni, balafon, mbira, and the Afro kits
+      presets-world.ts       Asia, the Middle East, Latin America
+      presets-orchestral.ts  the rest of the orchestra, and vintage keys
+    pump.ts              sidechain duck envelopes (pure, so it is tested)
     spectral/
       fft.ts             radix-2 FFT, windows, cached plans
       stft.ts            streaming frame iterator + block STFT/ISTFT
@@ -270,6 +292,10 @@ warping in both directions, offline render, separation and bundling.
 `mashup-e2e.mjs` drives the lab with two songs that differ in tempo, key,
 tuning reference and stereo layout.
 
+The instrument library is checked the same way: unique ids, ranges that contain
+their own centre, kits whose pieces can all be triggered and none of which are
+hot on their own, and every Ideas groove checked against the kit it names.
+
 The curriculum is validated against the instrument library: every demo must
 name a real preset, stay inside that instrument's playable range, only trigger
 drum pieces the kit actually has, and run for under 25 seconds. That caught a
@@ -303,7 +329,7 @@ arrangement canvas.
   For anything polyphonic, use chord mode or import the audio.
 - **Synthesised instruments are models, not recordings.** The sitar and the
   Rhodes hold up well; the violin is a synthesised violin and sounds like one.
-  That is the trade for a 130 KB app that works offline — and if you want the
+  That is the trade for a 185 KB app that works offline — and if you want the
   real thing, record it or import it.
 - **Long files take real time.** Separating a four-minute song is tens of
   seconds of DSP, and warping one is similar. It runs in a worker with a

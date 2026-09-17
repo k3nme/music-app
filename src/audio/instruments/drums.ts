@@ -10,6 +10,14 @@ import { clamp, type InstrumentInstance, type NoteHandle, type PresetBase } from
 export type DrumVoiceType =
   | 'kick' | 'snare' | 'hat' | 'tom' | 'clap' | 'rim' | 'cowbell'
   | 'cymbal' | 'membrane' | 'shaker' | 'click' | 'noise'
+  // Long-form transition effects. These are not drums — they run for bars, not
+  // milliseconds — but they are one-shots triggered by a note, so they belong
+  // to the same engine rather than needing one of their own.
+  | 'riser' | 'downlifter' | 'impact' | 'sweep' | 'reverse' | 'roll'
+  /** Pitched, sliding sub-bass drum — the sound amapiano is built on. */
+  | 'logdrum'
+  /** Membrane whose pitch bends under hand pressure, like a talking drum. */
+  | 'talking'
 
 export interface DrumPiece {
   type: DrumVoiceType
@@ -30,6 +38,13 @@ export interface DrumPiece {
   drive?: number
   /** Pieces sharing a choke group cut each other off (closed hat vs open hat). */
   choke?: string
+  /**
+   * Length in *beats* rather than seconds, for the transition effects. A riser
+   * has to end exactly on the drop, so it must follow the tempo.
+   */
+  beats?: number
+  /** Where the pitch or filter slide ends, as a multiple of `tune`. */
+  glideTo?: number
 }
 
 export interface DrumParams {
@@ -41,6 +56,11 @@ export interface DrumParams {
 export function createDrums(ctx: BaseAudioContext, preset: PresetBase): InstrumentInstance {
   const p = preset.params as unknown as DrumParams
   const pieces = p.pieces ?? {}
+  /**
+   * Transition effects are written in beats, so they need the song tempo.
+   * The engine keeps this current; 120 is only the value before playback.
+   */
+  let bpm = 120
   const output = ctx.createGain()
   output.gain.value = p.gain ?? 0.9
 
@@ -97,7 +117,11 @@ export function createDrums(ctx: BaseAudioContext, preset: PresetBase): Instrume
     const vel = velocityToGain(velocity)
     const { input } = channel(piece)
     const sources: AudioScheduledSourceNode[] = []
-    const decay = Math.max(0.01, piece.decay)
+    // A piece measured in beats stretches with the tempo; everything else is
+    // a fixed length in seconds.
+    const decay = piece.beats !== undefined
+      ? Math.max(0.05, (piece.beats * 60) / bpm)
+      : Math.max(0.01, piece.decay)
     const tone = piece.tone ?? 0.5
     const snap = piece.snap ?? 0.5
 
@@ -248,6 +272,160 @@ export function createDrums(ctx: BaseAudioContext, preset: PresetBase): Instrume
         addNoise('highpass', 3000, 0.7, 0.4, 0.008)
         break
       }
+      case 'riser':
+      case 'downlifter': {
+        // Filtered noise whose band sweeps across the whole build, plus a
+        // pitched tone doing the same, which is what sells the rise.
+        const up = piece.type === 'riser'
+        const from = piece.tune
+        const to = piece.tune * (piece.glideTo ?? (up ? 26 : 0.12))
+
+        const noise = noiseSource(ctx)
+        const filter = ctx.createBiquadFilter()
+        filter.type = 'bandpass'
+        filter.Q.value = 1.2 + tone * 6
+        filter.frequency.setValueAtTime(clamp(from, 30, 18000), when)
+        filter.frequency.exponentialRampToValueAtTime(clamp(to, 30, 18000), when + decay)
+        const noiseGain = ctx.createGain()
+        noiseGain.gain.setValueAtTime(0.0001, when)
+        // Rising: swell in. Falling: start loud and fade as it drops away.
+        noiseGain.gain.exponentialRampToValueAtTime(
+          Math.max(0.0002, 0.75 * vel), when + (up ? decay * 0.92 : decay * 0.08),
+        )
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, when + decay)
+        noise.connect(filter).connect(noiseGain).connect(input)
+        noise.start(when)
+        noise.stop(when + decay + 0.05)
+        sources.push(noise)
+
+        if (snap > 0.01) {
+          const osc = ctx.createOscillator()
+          osc.type = 'sawtooth'
+          osc.frequency.setValueAtTime(clamp(from * 0.5, 20, 12000), when)
+          osc.frequency.exponentialRampToValueAtTime(clamp(to * 0.5, 20, 12000), when + decay)
+          const g = ctx.createGain()
+          g.gain.setValueAtTime(0.0001, when)
+          g.gain.exponentialRampToValueAtTime(Math.max(0.0002, snap * 0.35 * vel), when + decay * 0.9)
+          g.gain.exponentialRampToValueAtTime(0.0001, when + decay)
+          const lp = ctx.createBiquadFilter()
+          lp.type = 'lowpass'
+          lp.frequency.value = 6000
+          osc.connect(g).connect(lp).connect(input)
+          osc.start(when)
+          osc.stop(when + decay + 0.05)
+          sources.push(osc)
+        }
+        break
+      }
+
+      case 'impact': {
+        // The hit at the drop: a sub boom under a broadband crash.
+        addOsc('sine', piece.tune * 3, 0.9, decay * 0.55, { to: piece.tune * 0.6, time: decay * 0.3 })
+        addNoise('lowpass', 900 + tone * 3000, 0.7, 0.8, decay, 0.002)
+        addNoise('highpass', 5000, 0.6, 0.35 * snap, decay * 0.7, 0.001)
+        break
+      }
+
+      case 'sweep': {
+        // White noise through a moving filter, no pitch content. The "whoosh".
+        const noise = noiseSource(ctx)
+        const filter = ctx.createBiquadFilter()
+        filter.type = 'bandpass'
+        filter.Q.value = 0.7 + tone * 3
+        const target = piece.tune * (piece.glideTo ?? 8)
+        filter.frequency.setValueAtTime(clamp(piece.tune, 30, 18000), when)
+        filter.frequency.exponentialRampToValueAtTime(clamp(target, 30, 18000), when + decay * 0.55)
+        filter.frequency.exponentialRampToValueAtTime(clamp(piece.tune, 30, 18000), when + decay)
+        const g = ctx.createGain()
+        hit(g.gain, when, 0.7 * vel, decay * 0.25, decay * 0.75)
+        noise.connect(filter).connect(g).connect(input)
+        noise.start(when)
+        noise.stop(when + decay + 0.05)
+        sources.push(noise)
+        break
+      }
+
+      case 'reverse': {
+        // Backwards cymbal: swell up to nothing, then stop dead.
+        const noise = noiseSource(ctx)
+        const hp = ctx.createBiquadFilter()
+        hp.type = 'highpass'
+        hp.frequency.value = 1200 + tone * 4000
+        const g = ctx.createGain()
+        g.gain.setValueAtTime(0.0001, when)
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.7 * vel), when + decay * 0.97)
+        g.gain.linearRampToValueAtTime(0.0001, when + decay)
+        noise.connect(hp).connect(g).connect(input)
+        noise.start(when)
+        noise.stop(when + decay + 0.02)
+        sources.push(noise)
+        break
+      }
+
+      case 'roll': {
+        // A snare roll that accelerates into the drop.
+        const hits = Math.max(4, Math.round(8 + snap * 24))
+        for (let i = 0; i < hits; i++) {
+          // Quadratic spacing: hits bunch up towards the end.
+          const at = when + decay * Math.pow(i / hits, 1.7)
+          const n = noiseSource(ctx)
+          const f = ctx.createBiquadFilter()
+          f.type = 'highpass'
+          f.frequency.value = 800 + tone * 3000
+          const g = ctx.createGain()
+          hit(g.gain, at, vel * (0.35 + 0.65 * (i / hits)), 0.001, 0.055)
+          n.connect(f).connect(g).connect(input)
+          n.start(at)
+          n.stop(at + 0.12)
+          sources.push(n)
+        }
+        break
+      }
+
+      case 'logdrum': {
+        // Amapiano's signature: a sine that slides *up* into its target pitch,
+        // with just enough click to read as a drum rather than a bass note.
+        const target = piece.tune
+        const start = target * (piece.bend ?? 0.55)
+        const osc = ctx.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(Math.max(20, start), when)
+        osc.frequency.exponentialRampToValueAtTime(
+          Math.max(20, target), when + Math.max(0.01, piece.bendTime ?? 0.09),
+        )
+        const g = ctx.createGain()
+        hit(g.gain, when, vel, 0.004, decay)
+        const shaper = ctx.createWaveShaper()
+        shaper.curve = driveCurve(0.25 + tone * 0.4)
+        osc.connect(g).connect(shaper).connect(input)
+        osc.start(when)
+        osc.stop(when + decay + 0.1)
+        sources.push(osc)
+        if (snap > 0.01) addNoise('bandpass', 2200, 1.4, snap * 0.22, 0.012)
+        break
+      }
+
+      case 'talking': {
+        // A talking drum's pitch is squeezed up and released again mid-note.
+        const osc = ctx.createOscillator()
+        osc.type = 'sine'
+        const peak = piece.tune * (piece.bend ?? 1.5)
+        osc.frequency.setValueAtTime(Math.max(20, piece.tune), when)
+        osc.frequency.exponentialRampToValueAtTime(Math.max(20, peak), when + decay * 0.3)
+        osc.frequency.exponentialRampToValueAtTime(
+          Math.max(20, piece.tune * (piece.glideTo ?? 1)), when + decay * 0.9,
+        )
+        const g = ctx.createGain()
+        hit(g.gain, when, vel * 0.9, 0.003, decay)
+        osc.connect(g).connect(input)
+        osc.start(when)
+        osc.stop(when + decay + 0.08)
+        sources.push(osc)
+        addOsc('sine', piece.tune * 2.7, 0.14 * tone, decay * 0.4)
+        if (snap > 0.01) addNoise('bandpass', piece.tune * 9, 2, snap * 0.4, 0.02)
+        break
+      }
+
       case 'noise':
       default: {
         addNoise('bandpass', piece.tune, 0.8, 0.7, decay)
@@ -286,6 +464,9 @@ export function createDrums(ctx: BaseAudioContext, preset: PresetBase): Instrume
   return {
     presetId: preset.id,
     output,
+    setTempo(nextBpm: number) {
+      bpm = Math.max(20, nextBpm)
+    },
     noteOn(midi, when, velocity) {
       const piece = pieces[Math.round(midi)]
       if (piece) trigger(piece, when, velocity)

@@ -46,7 +46,7 @@ record('New users start in the simplified view', state.experience === 'guided', 
 
 // --- the curriculum --------------------------------------------------------
 const modules = await page.locator('.learn-module-title').allTextContents()
-record('All eight modules are listed', modules.length === 8, modules.map((m) => m.replace(/^\d+\s*/, '')).join(' · '))
+record('All ten modules are listed', modules.length === 10, modules.map((m) => m.replace(/^\d+\s*/, '')).join(' · '))
 
 const lessonCount = await page.locator('.learn-lesson').count()
 record('Every lesson is reachable from the browser', lessonCount >= 25, `${lessonCount} lessons`)

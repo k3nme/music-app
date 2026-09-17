@@ -32,9 +32,13 @@ the project.
 `engine.positionBeats` via `usePlayhead`.
 
 **Instruments implement one interface.** `InstrumentInstance` in
-`src/audio/types.ts`. Adding an instrument usually means adding a preset to
-`src/audio/instruments/presets.ts`, not writing new code — reach for a new
-engine only when no existing one can make the sound.
+`src/audio/types.ts`. Adding an instrument usually means adding a preset, not
+writing new code — reach for a new engine only when no existing one can make
+the sound. The library is split by tradition (`presets-electronic`,
+`presets-african`, `presets-world`, `presets-orchestral`) over shared builders
+in `preset-kit.ts`; `presets.ts` aggregates them and owns the lookups. A unit
+test checks ids, ranges, families and kit pieces, so a preset that would be
+silent or unreachable fails there rather than in someone's ear.
 
 **Analysis and DSP stay pure.** `src/audio/analysis/*` and `src/audio/spectral/*`
 have no Web Audio and no DOM, so they run identically in a worker and in tests.
@@ -55,6 +59,17 @@ playable demo is not finished. The test enforces this for concept lessons.
 **Heavy DSP goes in a worker.** Anything that takes more than a frame — analysis,
 separation, warping — goes through `src/audio/workers`. Surface it with
 `startJob`/`updateJob`/`endJob` so the app never looks frozen.
+
+**Sounds that follow the tempo say so.** A riser has to end on the downbeat, so
+`DrumPiece.beats` is a length in bars, not seconds, and an instrument that cares
+implements `setTempo`. The engine calls it on `ensureTrack` and on every
+`setBpm`; `export.ts` calls it before rendering. Store beats, never seconds.
+
+**The pump is scheduled, not detected.** `src/audio/pump.ts` emits the sidechain
+duck as breakpoints in beats — pure, tested, and used by the live scheduler, the
+offline render and the lesson player alike. It sits on the absolute song grid so
+it lands on the beat whatever the drums are doing. Channel graph is
+`... -> fader -> pump -> master`, so the sends breathe with the track.
 
 **Suggestions never mutate.** `Suggestion.apply` returns a new project. This is
 what keeps undo working, and it's the contract that would make a remote
@@ -96,6 +111,14 @@ change the project and let it flow.
   DAW knowledge, check what it does in guided mode before shipping it.
 - **The browser suites open the app through the first-run doors.** If you change
   the door labels, five test scripts need updating with them.
+- **Demo tracks are reused across lessons.** `learn/player.ts` keys a hidden
+  track per preset, and `ensureTrack` only applies channel settings when it
+  builds the channel — so the player calls `updateChannel` every time. Forget
+  that and the second lesson to use an instrument inherits the first one's level
+  and duck.
+- **The curriculum test pins the module list.** Adding a module means updating
+  the expected order in `learn/__tests__/curriculum.test.ts`; that is
+  deliberate, so a module can't go missing quietly.
 
 ## Testing what matters
 

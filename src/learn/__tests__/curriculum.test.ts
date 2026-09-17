@@ -18,9 +18,10 @@ function allDemos(): { demo: Demo; lessonId: string }[] {
 }
 
 describe('curriculum shape', () => {
-  it('has all eight modules in order', () => {
+  it('has all ten modules in order', () => {
     expect(CURRICULUM.map((m) => m.id)).toEqual([
-      'sound', 'notes', 'scales', 'chords', 'rhythm', 'instruments', 'arranging', 'overtone',
+      'sound', 'notes', 'scales', 'chords', 'rhythm', 'instruments', 'world',
+      'arranging', 'electronic', 'overtone',
     ])
   })
 

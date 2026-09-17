@@ -95,6 +95,73 @@ const silent = Object.entries(perEngine).filter(([, peak]) => peak < 0.01).map((
 record('Every sampled instrument makes sound', silent.length === 0,
   silent.length ? `silent: ${silent.join(', ')}` : JSON.stringify(perEngine))
 
+// --- sidechain pump -------------------------------------------------------
+// The duck is scheduled, so it has to survive the offline render too: a bounce
+// without it is a different record. Measured, not eyeballed.
+const pump = await page.evaluate(async () => {
+  const mod = { ...window.__overtone, ...await import('/src/music/project.ts') }
+  const { renderProject, emptyProject, createTrack, createClip, createNote } = mod
+
+  async function envelope(amount) {
+    const project = emptyProject('pump')
+    project.bpm = 120
+    const track = createTrack({ presetId: 'supersaw' })
+    track.channel = { ...track.channel, pump: amount, pumpBeats: 1, reverbSend: 0 }
+    project.tracks = [track]
+    const clip = createClip(track.id, { contentBeats: 4, lengthBeats: 4 })
+    clip.notes = [createNote(60, 0, 4, 0.9), createNote(67, 0, 4, 0.9)]
+    project.clips = [clip]
+    const buffer = await renderProject(project, { tailSeconds: 0.2, sampleRate: 22050 })
+    const data = buffer.getChannelData(0)
+    const rate = buffer.sampleRate
+    const rms = (from, to) => {
+      let sum = 0, n = 0
+      for (let i = Math.floor(from * rate); i < Math.floor(to * rate) && i < data.length; i++) {
+        sum += data[i] * data[i]; n++
+      }
+      return n ? Math.sqrt(sum / n) : 0
+    }
+    // Beats land at the render's 20ms lead. Skip beat 0: the note is still
+    // attacking there, which would confound the measurement.
+    const lead = 0.02, beat = 0.5
+    let ducked = 0, open = 0
+    for (const b of [1, 2, 3]) {
+      const at = lead + b * beat
+      ducked += rms(at + 0.01, at + 0.05)
+      open += rms(at - 0.07, at - 0.02)
+    }
+    return { ratio: ducked / Math.max(1e-9, open), open: open / 3 }
+  }
+
+  return { on: await envelope(0.9), off: await envelope(0) }
+})
+record('Sidechain pump ducks the render on every beat', pump.on.ratio < 0.55,
+  `ducked to ${(pump.on.ratio * 100).toFixed(0)}% of the level just before the beat`)
+record('A channel with no pump renders flat', pump.off.ratio > 0.85,
+  `${(pump.off.ratio * 100).toFixed(0)}% — unchanged across the beat`)
+record('The pump does not just turn the track down', pump.on.open > pump.off.open * 0.7,
+  `open level ${pump.on.open.toFixed(4)} vs ${pump.off.open.toFixed(4)}`)
+
+// The live scheduler writes the same envelope from the transport, which is a
+// different code path from the render above — so watch the actual gain move.
+const livePump = await page.evaluate(async () => {
+  const { useStore, engine } = window.__overtone
+  const store = useStore.getState()
+  const track = store.project.tracks.find((t) => !t.isDrum)
+  store.updateChannel(track.id, { pump: 0.9, pumpBeats: 1 })
+  await store.play()
+  const samples = []
+  for (let i = 0; i < 60; i++) {
+    samples.push(engine.getChannel(track.id)?.pump.gain.value ?? -1)
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  useStore.getState().stop()
+  store.updateChannel(track.id, { pump: 0 })
+  return { min: Math.min(...samples), max: Math.max(...samples) }
+})
+record('The transport ducks a live channel too', livePump.min < 0.6 && livePump.max > 0.9,
+  `gain moved between ${livePump.min.toFixed(2)} and ${livePump.max.toFixed(2)}`)
+
 // --- hum pipeline in-page --------------------------------------------------
 const hum = await page.evaluate(async () => {
   const { analyseRecording } = window.__overtone

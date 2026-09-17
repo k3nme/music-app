@@ -8,34 +8,12 @@
  * 808 all live in the same few hundred kilobytes and can be reshaped live.
  */
 
-import type { InstrumentFamily, PresetBase, SynthEngine } from '../types'
-import type { DrumPiece } from './drums'
-
-const FAMILY_HUE: Record<InstrumentFamily, number> = {
-  keys: 42, plucked: 22, bowed: 344, winds: 188, brass: 28,
-  mallets: 286, synth: 258, bass: 212, voice: 318, drums: 8, world: 150,
-}
-
-type Def = Partial<PresetBase> &
-  Pick<PresetBase, 'id' | 'name' | 'family' | 'engine' | 'params'> & { blurb: string }
-
-function def(d: Def): PresetBase {
-  return {
-    tags: [],
-    centerMidi: 60,
-    range: [36, 84],
-    polyphony: 10,
-    hue: FAMILY_HUE[d.family],
-    ...d,
-  }
-}
-
-const sub = (d: Omit<Def, 'engine'>) => def({ ...d, engine: 'subtractive' as SynthEngine })
-const fm = (d: Omit<Def, 'engine'>) => def({ ...d, engine: 'fm' as SynthEngine })
-const pluck = (d: Omit<Def, 'engine'>) => def({ ...d, engine: 'pluck' as SynthEngine })
-
-// Routing shorthand for the FM engine (see fm.ts).
-const OUT = -1
+import type { InstrumentFamily, PresetBase } from '../types'
+import { fm, kit, OUT, piece, pluck, sub } from './preset-kit'
+import { ELECTRONIC_PRESETS, FX_KIT } from './presets-electronic'
+import { AFRICAN_KITS, AFRICAN_PRESETS } from './presets-african'
+import { WORLD_PRESETS, WORLD_KITS } from './presets-world'
+import { ORCHESTRAL_PRESETS, ORCHESTRAL_KITS } from './presets-orchestral'
 
 // ---------------------------------------------------------------------------
 // Keys
@@ -798,22 +776,12 @@ const BASSES: PresetBase[] = [
 
 export const MELODIC_PRESETS: PresetBase[] = [
   ...KEYS, ...PLUCKED, ...BOWED, ...WINDS, ...BRASS, ...MALLETS, ...SYNTHS, ...BASSES,
+  ...ELECTRONIC_PRESETS, ...AFRICAN_PRESETS, ...WORLD_PRESETS, ...ORCHESTRAL_PRESETS,
 ]
 
 // ---------------------------------------------------------------------------
 // Drum kits
 // ---------------------------------------------------------------------------
-
-const piece = (p: DrumPiece): DrumPiece => p
-
-const kit = (
-  id: string, name: string, blurb: string, tags: string[],
-  pieces: Record<number, DrumPiece>, gain = 0.9, drive = 0,
-): PresetBase =>
-  def({
-    id, name, family: 'drums', engine: 'drum', blurb, tags,
-    centerMidi: 40, range: [30, 80], polyphony: 24, params: { pieces, gain, drive },
-  })
 
 const DRUM_KITS: PresetBase[] = [
   kit('kit-808', 'TR-808', 'The boom, the tick, the sizzle. Hip-hop and trap.',
@@ -921,7 +889,9 @@ const DRUM_KITS: PresetBase[] = [
     }, 0.9),
 ]
 
-export const DRUM_PRESETS = DRUM_KITS
+export const DRUM_PRESETS: PresetBase[] = [
+  ...DRUM_KITS, FX_KIT, ...AFRICAN_KITS, ...WORLD_KITS, ...ORCHESTRAL_KITS,
+]
 
 export const ALL_PRESETS: PresetBase[] = [...MELODIC_PRESETS, ...DRUM_PRESETS]
 

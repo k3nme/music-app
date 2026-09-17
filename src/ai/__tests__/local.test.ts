@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { localProvider } from '../local'
 import { demoProject } from '../../music/demo'
 import { collectNotes, emptyProject, type Project } from '../../music/project'
+import { getPreset, kitPieces } from '../../audio/instruments'
 
 const ctx = (project: Project, clipId?: string) => ({ project, clipId: clipId ?? project.clips[0]?.id })
 
@@ -35,6 +36,23 @@ describe('local provider', () => {
     const scheduled = collectNotes(withDrums, 0, 4)
     expect(scheduled.length).toBeGreaterThan(4)
     expect(scheduled.every((n) => n.velocity > 0 && n.durationBeats > 0)).toBe(true)
+  })
+
+  it('offers a groove for every kit it names, and only sounds that kit has', async () => {
+    const project = emptyProject()
+    const suggestions = await localProvider.suggest(ctx(project), 'drums')
+    // A pattern pointing at a piece the kit doesn't have is silent, not an
+    // error — exactly the kind of thing that survives a manual look.
+    for (const suggestion of suggestions) {
+      const applied = suggestion.apply(project)
+      const track = applied.tracks[applied.tracks.length - 1]
+      const available = new Set(kitPieces(getPreset(track.presetId)).map((p) => p.midi))
+      const notes = collectNotes(applied, 0, applied.lengthBeats)
+      expect(notes.length, suggestion.title).toBeGreaterThan(4)
+      for (const note of notes) {
+        expect(available.has(note.midi), `${suggestion.title}: no piece at ${note.midi}`).toBe(true)
+      }
+    }
   })
 
   it('keeps a harmony line inside the key', async () => {

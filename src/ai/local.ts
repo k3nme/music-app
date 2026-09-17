@@ -306,6 +306,68 @@ const DRUM_STYLES: DrumStyle[] = [
     ],
   },
   {
+    name: 'Amapiano', detail: 'Log drums where the bass line would be. South Africa.',
+    kit: 'kit-amapiano', bpmHint: [108, 118],
+    steps: [
+      [K, 0, 1], [K, 6, 0.9], [K, 12, 0.95],
+      [40, 8, 1], [43, 10, 0.8], [41, 14, 0.9],
+      [39, 4, 0.6],
+      ...[2, 6, 10, 14].map((s) => [70, s, 0.45] as [number, number, number]),
+      ...[0, 8].map((s) => [72, s, 0.3] as [number, number, number]),
+    ],
+  },
+  {
+    name: 'Afrobeats', detail: 'The Lagos pop groove — rolling kick, rim, shakers.',
+    kit: 'kit-afrobeats', bpmHint: [98, 112],
+    steps: [
+      [K, 0, 1], [K, 6, 0.9], [K, 10, 0.85],
+      [37, 4, 0.7], [37, 12, 0.7],
+      [40, 14, 0.75], [41, 7, 0.6], [43, 11, 0.6],
+      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [70, s, s % 4 === 0 ? 0.5 : 0.35] as [number, number, number]),
+    ],
+  },
+  {
+    name: 'Afro house', detail: 'Four to the floor under layered African percussion.',
+    kit: 'kit-afrohouse', bpmHint: [118, 128],
+    steps: [
+      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
+      ...[4, 12].map((s) => [CL, s, 0.8] as [number, number, number]),
+      ...[2, 6, 10, 14].map((s) => [HO, s, 0.5] as [number, number, number]),
+      [41, 3, 0.7], [43, 7, 0.7], [40, 11, 0.75], [43, 15, 0.7],
+      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [70, s, 0.35] as [number, number, number]),
+    ],
+  },
+  {
+    name: 'Techno', detail: 'Hard, dry and mechanical — the Berlin version of four on the floor.',
+    kit: 'kit-techno', bpmHint: [128, 145],
+    steps: [
+      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
+      [CL, 12, 0.75], [70, 6, 0.4], [70, 14, 0.45],
+      ...[2, 6, 10, 14].map((s) => [HO, s, 0.45] as [number, number, number]),
+      ...[1, 3, 5, 7, 9, 11, 13, 15].map((s) => [HC, s, 0.3] as [number, number, number]),
+    ],
+  },
+  {
+    name: 'Breakbeat', detail: 'The funk break jungle and drum & bass were built on.',
+    kit: 'kit-breakbeat', bpmHint: [160, 180],
+    steps: [
+      [K, 0, 1], [K, 10, 0.9],
+      [S, 4, 0.95], [S, 12, 0.95], [40, 7, 0.4], [40, 14, 0.45],
+      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [HC, s, s % 4 === 0 ? 0.55 : 0.35] as [number, number, number]),
+      [HO, 6, 0.5],
+    ],
+  },
+  {
+    name: 'Reggaeton', detail: 'The dembow — one syncopated snare figure, repeated.',
+    kit: 'kit-reggaeton', bpmHint: [88, 100],
+    steps: [
+      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
+      [S, 3, 0.9], [S, 6, 0.85], [S, 11, 0.9], [S, 14, 0.85],
+      ...[2, 6, 10, 14].map((s) => [HC, s, 0.4] as [number, number, number]),
+      ...[0, 8].map((s) => [70, s, 0.35] as [number, number, number]),
+    ],
+  },
+  {
     name: 'Latin groove', detail: 'Congas and clave over a steady pulse.',
     kit: 'kit-latin', bpmHint: [90, 130],
     steps: [
