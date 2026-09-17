@@ -16,6 +16,7 @@ import { NOTE_NAMES } from '../../music/theory'
 import { uid } from '../../lib/id'
 import { useStore } from '../../state/store'
 import { Close, Play, Plus, Stop, Trash, Wand } from '../icons'
+import { Term } from './Term'
 import { Waveform } from './Waveform'
 
 const STEM_HUES: Record<StemName, number> = { vocals: 330, drums: 18, bass: 210, other: 268 }
@@ -351,7 +352,7 @@ export function MashupLab({ onClose }: { onClose(): void }) {
               </select>
 
               <div className="sep" />
-              <span className="label">Section</span>
+              <Term of="Bar"><span className="label">Section</span></Term>
               <select className="field" value={bars} onChange={(e) => setBars(Number(e.target.value))}>
                 {SECTION_OPTIONS.map((option) => (
                   <option key={option} value={option}>{option} bars</option>

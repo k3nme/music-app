@@ -5,6 +5,7 @@ import {
 import { disposeDemoTracks, playDemo, stopDemo } from '../../learn/player'
 import { loadProgress, markComplete, resetProgress, type Progress } from '../../learn/progress'
 import type { Block, Demo, Lesson, Module, TryAction } from '../../learn/types'
+import { searchGlossary } from '../../learn/glossary'
 import { useStore } from '../../state/store'
 import { Close, Play, Stop } from '../icons'
 
@@ -13,6 +14,7 @@ export function Learn({ onClose, startAt }: { onClose(): void; startAt?: string 
   const [openLesson, setOpenLesson] = useState<string | null>(
     () => startAt ?? loadProgress().lastLesson,
   )
+  const [view, setView] = useState<'lessons' | 'glossary'>('lessons')
 
   useEffect(() => () => { disposeDemoTracks() }, [])
 
@@ -49,9 +51,21 @@ export function Learn({ onClose, startAt }: { onClose(): void; startAt?: string 
           </div>
           <div className="spacer" />
           {!current && (
-            <span className="chip">
-              {done.size} of {ALL_LESSONS.length} read
-            </span>
+            <>
+              <div className="tabs">
+                <button
+                  className={`tab ${view === 'lessons' ? 'on' : ''}`}
+                  onClick={() => setView('lessons')}
+                >Lessons</button>
+                <button
+                  className={`tab ${view === 'glossary' ? 'on' : ''}`}
+                  onClick={() => setView('glossary')}
+                >Glossary</button>
+              </div>
+              {view === 'lessons' && (
+                <span className="chip">{done.size} of {ALL_LESSONS.length} read</span>
+              )}
+            </>
           )}
           {current && (
             <button className="btn" onClick={() => { stopDemo(); setOpenLesson(null) }}>
@@ -76,6 +90,8 @@ export function Learn({ onClose, startAt }: { onClose(): void; startAt?: string 
                 onOpen={(id) => { stopDemo(); setOpenLesson(id) }}
                 onClose={onClose}
               />
+            : view === 'glossary'
+            ? <Glossary onOpen={(id) => { setView('lessons'); setOpenLesson(id) }} />
             : <Browser
                 done={done}
                 lastLesson={progress.lastLesson}
@@ -159,6 +175,46 @@ function Browser({ done, lastLesson, onOpen, onReset }: {
           Reset progress
         </button>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+function Glossary({ onOpen }: { onOpen(lessonId: string): void }) {
+  const [query, setQuery] = useState('')
+  const entries = useMemo(() => searchGlossary(query), [query])
+
+  return (
+    <div className="glossary">
+      <input
+        className="field"
+        style={{ width: '100%', marginBottom: 12 }}
+        placeholder="Search — try 'chord', 'warp', 'reverb'…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        autoFocus
+      />
+      {entries.length === 0 && (
+        <div style={{ color: 'var(--faint)', padding: 12 }}>
+          Nothing matches “{query}”.
+        </div>
+      )}
+      <dl className="lesson-terms">
+        {entries.map((entry) => (
+          <div className="lesson-term" key={entry.term}>
+            <dt>{entry.term}</dt>
+            <dd>
+              {entry.meaning}
+              {entry.lessonId && (
+                <button className="term-link" onClick={() => onOpen(entry.lessonId!)}>
+                  {' '}Learn this properly →
+                </button>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }

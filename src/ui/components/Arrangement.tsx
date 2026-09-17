@@ -11,6 +11,7 @@ import { Waveform } from './Waveform'
 import { useStore } from '../../state/store'
 import { useLevel, usePlayhead } from '../hooks'
 import { Copy, Plus, Trash } from '../icons'
+import { Term } from './Term'
 
 const MIN_PPB = 6
 const MAX_PPB = 64
@@ -62,7 +63,7 @@ export function Arrangement() {
     <div className="arrange-pane">
       <div className="track-col">
         <div className="track-col-head">
-          <span className="label">Tracks</span>
+          <Term of="Track"><span className="label">Tracks</span></Term>
           <div className="spacer" />
           <button
             className="btn ghost icon"

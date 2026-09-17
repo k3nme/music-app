@@ -155,3 +155,46 @@ describe('glossary', () => {
     expect(lessonTerms(lesson)).toContain('Tritone')
   })
 })
+
+describe('glossary lookups', () => {
+  it('merges curriculum terms with interface-only ones', async () => {
+    const { glossary } = await import('../glossary')
+    const terms = glossary().map((e) => e.term)
+    expect(terms).toContain('Timbre')   // from a lesson
+    expect(terms).toContain('Warp')     // interface only
+    expect(new Set(terms).size).toBe(terms.length)
+  })
+
+  it('finds a term by the word the interface actually shows', async () => {
+    const { explain } = await import('../glossary')
+    // "BPM" appears on the toolbar but the lesson defines "Tempo / BPM".
+    expect(explain('BPM')?.term).toBe('Tempo / BPM')
+    expect(explain('tempo')?.term).toBe('Tempo / BPM')
+    expect(explain('Reverb')?.meaning).toMatch(/room/i)
+    expect(explain('')).toBeNull()
+    expect(explain('not a real term at all')).toBeNull()
+  })
+
+  it('links terms to the lesson that teaches them', async () => {
+    const { explain } = await import('../glossary')
+    const { findLesson } = await import('../curriculum')
+    const entry = explain('Semitone')
+    expect(entry?.lessonId).toBeTruthy()
+    expect(findLesson(entry!.lessonId!)).not.toBeNull()
+  })
+
+  it('every lesson link in the glossary points at a real lesson', async () => {
+    const { glossary } = await import('../glossary')
+    const { findLesson } = await import('../curriculum')
+    for (const entry of glossary()) {
+      if (!entry.lessonId) continue
+      expect(findLesson(entry.lessonId), `${entry.term} -> ${entry.lessonId}`).not.toBeNull()
+    }
+  })
+
+  it('searches meanings as well as names', async () => {
+    const { searchGlossary } = await import('../glossary')
+    expect(searchGlossary('distortion').map((e) => e.term)).toContain('Drive')
+    expect(searchGlossary('').length).toBeGreaterThan(30)
+  })
+})

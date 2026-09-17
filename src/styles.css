@@ -966,3 +966,30 @@ input[type='range']::-moz-range-thumb {
   transition: color 0.14s var(--ease);
 }
 .firstrun-skip:hover { color: var(--dim); }
+
+/* --- self-explaining terms ----------------------------------------------- */
+
+.term {
+  position: relative; cursor: help; outline: none;
+  border-bottom: 1px dotted var(--faint);
+}
+.term:hover, .term:focus-visible { border-bottom-color: var(--accent); color: var(--text); }
+
+.term-bubble {
+  position: absolute; left: 50%; top: calc(100% + 8px); z-index: 500;
+  transform: translateX(-50%);
+  width: max-content; max-width: 260px;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 12px; border-radius: var(--r);
+  background: var(--panel-3); border: 1px solid var(--line);
+  box-shadow: var(--shadow); cursor: default;
+  animation: fade 0.12s var(--ease);
+}
+.term-bubble.above { top: auto; bottom: calc(100% + 8px); }
+.term-name { font-size: 11.5px; font-weight: 680; color: var(--text); }
+.term-meaning { font-size: 11.5px; line-height: 1.55; color: var(--dim); white-space: normal; }
+.term-link {
+  align-self: flex-start; font-size: 11px; font-weight: 600;
+  color: var(--accent-2); padding: 2px 0;
+}
+.term-link:hover { text-decoration: underline; }

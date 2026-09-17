@@ -111,6 +111,38 @@ record('Dismissing guidance switches to the full studio',
 const selectsNow = await page.locator('.topbar select').count()
 record('The full studio brings the controls back', selectsNow >= 2, `${selectsNow} selects`)
 
+// --- glossary --------------------------------------------------------------
+await page.locator('.topbar .btn.icon[title^="Learn music"]').click()
+await page.waitForSelector('.sheet.learn')
+// Learn resumes the last lesson you read, so step back to the index first.
+const backToIndex = page.locator('.btn', { hasText: 'All lessons' })
+if (await backToIndex.count()) await backToIndex.click()
+await page.waitForSelector('.learn-module')
+record('Learn resumes where you left off', true)
+await page.locator('.tab', { hasText: 'Glossary' }).click()
+await page.waitForSelector('.glossary')
+const glossaryCount = await page.locator('.glossary .lesson-term').count()
+record('The glossary lists every term in one place', glossaryCount > 40, `${glossaryCount} terms`)
+
+await page.getByPlaceholder(/Search — try/).fill('warp')
+await page.waitForTimeout(200)
+const warpText = await page.locator('.glossary .lesson-term').first().textContent()
+record('Glossary search finds an interface term', /stretch/i.test(warpText ?? ''), warpText?.slice(0, 80))
+await page.locator('.sheet-head .btn.icon.ghost').click()
+
+// --- terms explain themselves in place -------------------------------------
+await page.locator('.tab', { hasText: 'Mix' }).click()
+await page.waitForSelector('.strip')
+const termCount = await page.locator('.strip .term').count()
+record('Mixer labels are self-explaining', termCount >= 4, `${termCount} explainable labels`)
+
+await page.locator('.strip .term').first().hover()
+await page.waitForSelector('.term-bubble')
+const bubble = await page.locator('.term-bubble').first().textContent()
+record('Hovering a term explains it in plain language',
+  Boolean(bubble && bubble.length > 25), bubble?.slice(0, 80))
+
+await page.screenshot({ path: 'scripts/screenshots/glossary-term.png' })
 await page.screenshot({ path: 'scripts/screenshots/guided-off.png' })
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '))
 

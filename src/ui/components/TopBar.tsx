@@ -5,6 +5,7 @@ import { NOTE_NAMES, SCALES, type ScaleId } from '../../music/theory'
 import { useStore } from '../../state/store'
 import { usePlayhead } from '../hooks'
 import { RecordButton } from './RecordButton'
+import { Term } from './Term'
 import {
   Book, Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo,
   Share, Stop, Undo,
@@ -127,7 +128,9 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
           inputMode="numeric"
           aria-label="Tempo in BPM"
         />
-        <span style={{ color: 'var(--faint)' }}>{guided ? 'speed' : 'BPM'}</span>
+        <Term of="Tempo">
+          <span style={{ color: 'var(--faint)' }}>{guided ? 'speed' : 'BPM'}</span>
+        </Term>
       </label>
 
       {guided ? (

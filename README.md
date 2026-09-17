@@ -7,6 +7,9 @@ beatbox or play chords into it and they come back as notes on any instrument
 you like. Drop in finished songs and it works out their tempo, key and tuning,
 separates them into stems, and mashes them together on one grid.
 
+It also teaches you music, if you don't know any. Eight modules from what
+sound physically is through to mixing, and every example can be played.
+
 No install, no account, no upload. Everything runs locally and stays there.
 
 ```bash
@@ -19,6 +22,31 @@ npm run dev        # http://localhost:5173
 ---
 
 ## What it does
+
+### Start without knowing anything
+
+![The first run](docs/screenshot-firstrun.png)
+
+Four doors, phrased as things you might want to do rather than DAW features.
+Two of them need no music knowledge at all. New users land in a simplified
+view that hides the key and scale controls and suggests a next step based on
+what the project actually contains; one click leaves it for good.
+
+**Learn music** is a full course built into the app: eight modules, 32
+lessons, covering what sound is, notes and intervals, scales (including ragas,
+maqam and modes), chords and progressions, rhythm and groove, every instrument
+family and how it physically makes sound, then arrangement and mixing.
+
+![A lesson](docs/screenshot-learn.png)
+
+Every concept is paired with something you can play. That is the reason it
+lives in the app rather than in a document — you cannot read what a bowed
+string sounds like, or hear that a major chord is sitting inside the harmonic
+series. Demos run on hidden tracks, so opening a lesson mid-arrangement
+disturbs nothing.
+
+Jargon explains itself where it appears: hover any underlined label for a
+plain-English meaning and a link to the lesson that covers it properly.
 
 ### Capture an idea
 
@@ -127,6 +155,12 @@ src/
     mashup.ts            deck model, slicing, match planning
     bundle.ts            single-file project + audio container
     export.ts            offline render, stems, MIDI
+  learn/
+    types.ts             lesson data model — pure data, no audio
+    curriculum.ts        the eight modules, assembled
+    modules/             lesson content
+    player.ts            plays demos on hidden tracks
+    glossary.ts          plain-language meanings, merged with lesson terms
   ai/                    provider seam + the local theory-based provider
   state/store.ts         zustand store; engine reconciliation
   ui/                    React components
@@ -217,6 +251,7 @@ node scripts/hum-e2e.mjs      # hums into it via a fake audio device
 node scripts/chords-e2e.mjs   # strums chords into it
 node scripts/audio-e2e.mjs    # imports a song, warps it, separates it, bundles it
 node scripts/mashup-e2e.mjs   # mashes two songs of different tempo, key and tuning
+node scripts/learn-e2e.mjs    # the first-run doors, the lessons and the glossary
 ```
 
 The unit tests cover the parts where being wrong is silent: pitch detection
@@ -234,6 +269,12 @@ song in-page, imports it as a dropped file and checks tempo, key, tuning,
 warping in both directions, offline render, separation and bundling.
 `mashup-e2e.mjs` drives the lab with two songs that differ in tempo, key,
 tuning reference and stereo layout.
+
+The curriculum is validated against the instrument library: every demo must
+name a real preset, stay inside that instrument's playable range, only trigger
+drum pieces the kit actually has, and run for under 25 seconds. That caught a
+real musical error — the harmonic series demo started on a note two octaves
+below anything a trumpet can play.
 
 Every real bug found so far surfaced in a browser test, not a unit test: silent
 plucked renders, channel levels summing over unity, a deck quietly rendering
@@ -276,6 +317,10 @@ arrangement canvas.
   so and points at bundles instead.
 - **iOS Safari** needs a tap before any audio starts (a platform rule), and
   microphone latency there is worse than on desktop.
+- **The lessons teach concepts, not taste.** They will tell you what a minor
+  chord is and why a build works. They cannot tell you when your idea is
+  boring, when a section has gone on too long, or when to stop. That comes
+  from listening closely to music you already love.
 
 ## Licence
 

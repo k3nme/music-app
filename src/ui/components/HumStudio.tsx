@@ -12,6 +12,7 @@ import { detectKey, type KeyGuess } from '../../music/key'
 import { midiToName, NOTE_NAMES, SCALES } from '../../music/theory'
 import { useStore } from '../../state/store'
 import { Close, Mic, Play, Stop, Wand } from '../icons'
+import { Term } from './Term'
 
 type Stage = 'setup' | 'recording' | 'analysing' | 'result'
 type Mode = 'melody' | 'beat' | 'chords'
@@ -446,14 +447,14 @@ export function HumStudio() {
 
                 <div className="opt-grid">
                   <div className="opt">
-                    <div className="opt-head"><span className="label">Grid</span></div>
+                    <div className="opt-head"><Term of="Grid"><span className="label">Grid</span></Term></div>
                     <select className="field" value={grid} onChange={(e) => setGrid(Number(e.target.value))}>
                       {GRID_OPTIONS.map((g) => <option key={g.label} value={g.value}>{g.label}</option>)}
                     </select>
                   </div>
                   <div className="opt">
                     <div className="opt-head">
-                      <span className="label">Timing correction</span>
+                      <Term of="Quantise"><span className="label">Timing correction</span></Term>
                       <span className="mono" style={{ fontSize: 11 }}>{Math.round(strength * 100)}%</span>
                     </div>
                     <input type="range" min={0} max={1} step={0.05} value={strength} onChange={(e) => setStrength(Number(e.target.value))} />

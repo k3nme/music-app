@@ -2,6 +2,7 @@ import { getPreset } from '../../audio/instruments'
 import type { Track } from '../../music/project'
 import { useStore } from '../../state/store'
 import { useLevel } from '../hooks'
+import { Term } from './Term'
 
 export function Mixer() {
   const project = useStore((s) => s.project)
@@ -31,7 +32,7 @@ function Knob({ label, value, min, max, step = 0.01, format, onChange }: {
   return (
     <div className="knob-row">
       <div className="knob-label">
-        <span>{label}</span>
+        <Term of={label}>{label}</Term>
         <span className="mono">{format ? format(value) : Math.round(value * 100)}</span>
       </div>
       <input
@@ -98,11 +99,13 @@ function Strip({ track, playing, selected }: { track: Track; playing: boolean; s
           className={`mini ${track.muted ? 'on' : ''}`}
           style={{ flex: 1 }}
           onClick={() => toggleMute(track.id)}
+          title="Silence this track"
         >MUTE</button>
         <button
           className={`mini solo ${track.soloed ? 'on' : ''}`}
           style={{ flex: 1 }}
           onClick={() => toggleSolo(track.id)}
+          title="Silence everything else — the quickest way to hear what this part is doing"
         >SOLO</button>
       </div>
 
