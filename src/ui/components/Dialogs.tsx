@@ -379,6 +379,7 @@ const SHORTCUTS: [string, string][] = [
   ['T', 'Add an instrument'],
   ['I', 'Ideas — chords, bass, drums'],
   ['M', 'Mashup Lab'],
+  ['Q', 'Learn music'],
   ['R', 'Record audio onto a track'],
   ['L', 'Toggle loop'],
   ['N', 'Metronome'],
@@ -419,34 +420,5 @@ export function HelpDialog({ onClose }: { onClose(): void }) {
         </div>
       </div>
     </Sheet>
-  )
-}
-
-// ---------------------------------------------------------------------------
-
-export function Welcome({ onStart }: { onStart(demo: boolean): void }) {
-  return (
-    <div className="welcome">
-      <div className="welcome-card">
-        <div className="welcome-mark">
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M4 14c2.5 0 2.5-8 5-8s2.5 14 5 14 2.5-8 5-8" />
-          </svg>
-        </div>
-        <h1>Overtone</h1>
-        <p>
-          Hum it, hear it on anything.<br />
-          Sing an idea and play it back on a sitar, an 808, a string section — then loop it,
-          arrange it and build the whole track.
-        </p>
-        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-          <button className="btn primary lg" onClick={() => onStart(true)}>Start with a groove</button>
-          <button className="btn lg" onClick={() => onStart(false)}>Start empty</button>
-        </div>
-        <div style={{ color: 'var(--faint)', fontSize: 11.5, marginTop: 6 }}>
-          Works best with headphones. Nothing you make leaves your browser.
-        </div>
-      </div>
-    </div>
   )
 }

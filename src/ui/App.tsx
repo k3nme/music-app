@@ -10,7 +10,10 @@ import { syncEngine, useStore } from '../state/store'
 import { Arrangement, ClipActions } from './components/Arrangement'
 import { AudioClipEditor } from './components/AudioClipEditor'
 import { DrumGrid } from './components/DrumGrid'
-import { ExportDialog, FilesDialog, HelpDialog, ShareDialog, Welcome } from './components/Dialogs'
+import { ExportDialog, FilesDialog, HelpDialog, ShareDialog } from './components/Dialogs'
+import { FirstRun, type Door } from './components/FirstRun'
+import { Learn } from './components/Learn'
+import { NextStep } from './components/NextStep'
 import { HumStudio } from './components/HumStudio'
 import { IdeasButton, IdeasPanel } from './components/IdeasPanel'
 import { InstrumentPicker } from './components/InstrumentPicker'
@@ -27,6 +30,9 @@ export function App() {
   const project = useStore((s) => s.project)
   const humOpen = useStore((s) => s.humOpen)
   const helpOpen = useStore((s) => s.helpOpen)
+  const learnOpen = useStore((s) => s.learnOpen)
+  const learnLesson = useStore((s) => s.learnLesson)
+  const experience = useStore((s) => s.experience)
   const pickerFor = useStore((s) => s.instrumentPickerFor)
   const status = useStore((s) => s.status)
   const editorTab = useStore((s) => s.editorTab)
@@ -62,16 +68,30 @@ export function App() {
     return () => { cancelled = true }
   }, [])
 
-  const start = useCallback(async (demo: boolean) => {
+  const start = useCallback(async (door: Door) => {
     const state = useStore.getState()
     const hasContent = state.project.tracks.length > 0
+    // "Play with something" and "Learn" both want music already on screen;
+    // the other two doors put you straight into a flow that creates it.
+    const wantsDemo = door === 'groove' || door === 'learn'
     if (!hasContent) {
-      state.setProject(demo ? demoProject() : emptyProject(), { resetHistory: true })
+      state.setProject(wantsDemo ? demoProject() : emptyProject(), { resetHistory: true })
     }
     await engine.resume()
     useStore.setState({ audioReady: true })
     syncEngine(useStore.getState().project, true)
+
+    // Everyone arriving through a door gets the simplified view. It is one
+    // click to leave, and the full studio is unreadable from a standing start.
+    const stored = localStorage.getItem('overtone.experience')
+    // Someone who explicitly asks for the empty studio does not want hand-holding.
+    const guided = door !== 'studio' && stored !== 'full'
+    useStore.getState().setUI({ experience: guided ? 'guided' : 'full' })
+
     setStarted(true)
+    if (door === 'hum') useStore.getState().setUI({ humOpen: true })
+    if (door === 'mashup') setDialog('mashup')
+    if (door === 'learn') useStore.getState().setUI({ learnOpen: true })
   }, [])
 
   // --- keep stored audio loaded for whatever the project references --------
@@ -154,6 +174,12 @@ export function App() {
         case 'KeyM':
           if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'mashup' ? null : 'mashup')) }
           break
+        case 'KeyQ':
+          if (letterShortcutsLive) {
+            e.preventDefault()
+            state.setUI({ learnOpen: !state.learnOpen })
+          }
+          break
         case 'KeyR':
           if (letterShortcutsLive) {
             e.preventDefault()
@@ -186,6 +212,20 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // A lesson's "try it" button posts a request rather than reaching into
+  // App's dialog state directly.
+  const pendingDialog = useStore((s) => s.pendingDialog)
+  useEffect(() => {
+    if (!pendingDialog) return
+    if (pendingDialog === 'demo-project') {
+      useStore.getState().setProject(demoProject(), { resetHistory: true })
+      useStore.getState().flash('Starter groove loaded — press play', 'good')
+    } else {
+      setDialog(pendingDialog)
+    }
+    useStore.getState().setUI({ pendingDialog: null, learnOpen: false })
+  }, [pendingDialog])
+
   // Release the audio graph when the tab goes away.
   useEffect(() => {
     const onHide = () => { if (document.hidden) engine.panic() }
@@ -202,7 +242,7 @@ export function App() {
     ?? null
 
   if (!started) {
-    return booting ? <div className="welcome" /> : <Welcome onStart={(demo) => void start(demo)} />
+    return booting ? <div className="welcome" /> : <FirstRun onPick={(door) => void start(door)} />
   }
 
   return (
@@ -232,7 +272,7 @@ export function App() {
               </button>
             </div>
 
-            {editorTab === 'notes' && track?.kind !== 'audio' && (
+            {editorTab === 'notes' && track?.kind !== 'audio' && experience === 'full' && (
               <>
                 <div className="sep" />
                 <span className="label">Grid</span>
@@ -281,6 +321,12 @@ export function App() {
         </div>
       </div>
 
+      {learnOpen && (
+        <Learn
+          startAt={learnLesson ?? undefined}
+          onClose={() => useStore.getState().setUI({ learnOpen: false, learnLesson: null })}
+        />
+      )}
       {humOpen && <HumStudio />}
       {pickerFor && <InstrumentPicker />}
       {helpOpen && <HelpDialog onClose={() => useStore.getState().setUI({ helpOpen: false })} />}
@@ -289,6 +335,13 @@ export function App() {
       {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
       {dialog === 'ideas' && <IdeasPanel onClose={() => setDialog(null)} />}
       {dialog === 'mashup' && <MashupLab onClose={() => setDialog(null)} />}
+
+      {experience === 'guided' && (
+        <NextStep
+          onMashup={() => setDialog('mashup')}
+          onIdeas={() => setDialog('ideas')}
+        />
+      )}
 
       {status && <div className={`toast ${status.tone}`}>{status.message}</div>}
     </div>

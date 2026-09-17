@@ -80,7 +80,7 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 
 await page.goto(process.env.APP_URL ?? 'http://localhost:5173', { waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Start empty' }).click()
+await page.getByRole('button', { name: 'or open the empty studio' }).click()
 await page.waitForSelector('.app')
 
 await page.locator('.hum-btn').click()

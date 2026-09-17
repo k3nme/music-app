@@ -25,7 +25,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 await page.goto(URL, { waitUntil: 'networkidle' })
 
 // --- boot ------------------------------------------------------------------
-await page.getByRole('button', { name: 'Start with a groove' }).click()
+await page.getByRole('button', { name: /Play with something/ }).click()
 await page.waitForSelector('.app', { timeout: 10000 })
 await page.waitForFunction(() => Boolean(window.__overtone), null, { timeout: 10000 })
 record('App boots into the studio', true)

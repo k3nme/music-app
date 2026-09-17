@@ -41,6 +41,19 @@ export interface UIState {
   metronome: boolean
   /** Long-running DSP work, surfaced so the app never looks frozen. */
   jobs: { id: string; label: string; progress: number }[]
+  /** The Learn overlay, and which lesson it should open on. */
+  learnOpen: boolean
+  learnLesson: string | null
+  /**
+   * A dialog a lesson asked for. App owns dialog state, so lessons post a
+   * request here rather than reaching across into it.
+   */
+  pendingDialog: 'mashup' | 'ideas' | 'demo-project' | null
+  /**
+   * 'guided' hides the parts of the studio that assume you already know a DAW.
+   * It switches itself off once the user has made something.
+   */
+  experience: 'guided' | 'full'
   status: { message: string; tone: 'info' | 'warn' | 'good' } | null
 }
 
@@ -141,6 +154,10 @@ export const useStore = create<Store>((set, get) => ({
   loopEnabled: true,
   metronome: false,
   jobs: [],
+  learnOpen: false,
+  learnLesson: null,
+  pendingDialog: null,
+  experience: 'full',
   status: null,
 
   // --- project ------------------------------------------------------------

@@ -6,7 +6,8 @@ import { useStore } from '../../state/store'
 import { usePlayhead } from '../hooks'
 import { RecordButton } from './RecordButton'
 import {
-  Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo, Share, Stop, Undo,
+  Book, Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo,
+  Share, Stop, Undo,
 } from '../icons'
 
 function Jobs() {
@@ -38,6 +39,8 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
   const canRedo = useStore((s) => s.future.length > 0)
   const loopOn = useStore((s) => s.loopEnabled)
   const metro = useStore((s) => s.metronome)
+  const experience = useStore((s) => s.experience)
+  const guided = experience === 'guided'
   const { togglePlay, stop, rename, setBpm, setKey, undo, redo, setUI, addTrack } = useStore.getState()
 
   const beat = usePlayhead(playing)
@@ -124,9 +127,21 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
           inputMode="numeric"
           aria-label="Tempo in BPM"
         />
-        <span style={{ color: 'var(--faint)' }}>BPM</span>
+        <span style={{ color: 'var(--faint)' }}>{guided ? 'speed' : 'BPM'}</span>
       </label>
 
+      {guided ? (
+        <button
+          className="chip"
+          style={{ height: 30, cursor: 'pointer' }}
+          onClick={() => setUI({ learnOpen: true, learnLesson: 'scales-major-minor' })}
+          title="The set of notes this song uses. Click to learn what that means."
+        >
+          <span style={{ color: 'var(--faint)' }}>Notes:</span>
+          {NOTE_NAMES[project.key.root]} {SCALES[project.key.scale]?.label.toLowerCase()}
+        </button>
+      ) : (
+        <>
       <select
         className="field"
         value={project.key.root}
@@ -155,6 +170,8 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
           </optgroup>
         ))}
       </select>
+        </>
+      )}
 
       <div className="spacer" />
 
@@ -169,6 +186,11 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
       <button className="btn icon" onClick={onOpenFiles} title="Projects"><Folder width={14} height={14} /></button>
       <button className="btn icon" onClick={onShare} title="Share link"><Share width={14} height={14} /></button>
       <button className="btn icon" onClick={onExport} title="Export audio or MIDI"><Download width={14} height={14} /></button>
+      <button
+        className="btn icon"
+        onClick={() => setUI({ learnOpen: true })}
+        title="Learn music from scratch (Q)"
+      ><Book width={14} height={14} /></button>
       <button className="btn icon" onClick={() => setUI({ helpOpen: true })} title="Help (?)"><HelpIcon width={14} height={14} /></button>
 
       <button className="btn lg mashup-btn" onClick={onMashup} title="Mash up two or more songs (M)">
