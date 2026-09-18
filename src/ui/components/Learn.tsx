@@ -341,6 +341,7 @@ function TryButton({ action, onClose }: { action: TryAction; onClose(): void }) 
   const labels: Record<TryAction['kind'], string> = {
     'open-hum': 'Open Hum it',
     'open-mashup': 'Open the Mashup Lab',
+    'open-sounds': 'Take a song apart',
     'open-ideas': 'Open Ideas',
     'open-instruments': 'Browse instruments',
     'load-demo-project': 'Load the starter groove',
@@ -353,6 +354,7 @@ function TryButton({ action, onClose }: { action: TryAction; onClose(): void }) 
       case 'open-hum': store.setUI({ humOpen: true }); break
       case 'open-instruments': store.setUI({ instrumentPickerFor: 'new' }); break
       case 'open-mashup': store.setUI({ pendingDialog: 'mashup' }); break
+      case 'open-sounds': store.setUI({ pendingDialog: 'sounds' }); break
       case 'open-ideas': store.setUI({ pendingDialog: 'ideas' }); break
       case 'load-demo-project': store.setUI({ pendingDialog: 'demo-project' }); break
     }

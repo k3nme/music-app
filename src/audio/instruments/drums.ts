@@ -6,6 +6,7 @@
 
 import { driveCurve, noiseSource, velocityToGain } from '../dsp'
 import { clamp, type InstrumentInstance, type NoteHandle, type PresetBase } from '../types'
+import type { SamplerZone } from './sampler'
 
 export type DrumVoiceType =
   | 'kick' | 'snare' | 'hat' | 'tom' | 'clap' | 'rim' | 'cowbell'
@@ -492,7 +493,31 @@ export function createDrums(ctx: BaseAudioContext, preset: PresetBase): Instrume
 }
 
 /** Pieces a kit exposes, in play order — the drum grid uses this for its rows. */
+/**
+ * What is on each pad of a kit, whatever engine makes the sound.
+ *
+ * A kit taken out of a song is a sampler with one zone per pad, not a set of
+ * synthesis parameters — but the drum grid, the tests and the Ideas panel all
+ * ask the same question of both, so they get the same answer shape. Only the
+ * fields that mean something for a recording are filled in.
+ */
 export function kitPieces(preset: PresetBase): { midi: number; piece: DrumPiece }[] {
+  if (preset.engine === 'sampler') {
+    const { zones = [] } = preset.params as unknown as { zones: SamplerZone[] }
+    return zones
+      .map((zone) => ({
+        midi: zone.rootMidi,
+        piece: {
+          type: 'noise' as const,
+          name: zone.name ?? 'Sound',
+          tune: 0,
+          decay: 0,
+          level: zone.gain ?? 1,
+          pan: zone.pan,
+        },
+      }))
+      .sort((a, b) => a.midi - b.midi)
+  }
   const params = preset.params as unknown as DrumParams
   return Object.entries(params.pieces ?? {})
     .map(([midi, piece]) => ({ midi: Number(midi), piece }))

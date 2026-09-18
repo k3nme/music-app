@@ -62,6 +62,18 @@ const INTERFACE_TERMS: GlossaryEntry[] = [
     term: 'Stem',
     meaning: 'One layer of a finished song pulled out on its own — the vocal, the drums, the bass.',
   },
+  {
+    term: 'Sampler',
+    meaning: 'An instrument that plays recordings instead of making the sound from scratch. Press a higher key and the recording plays faster and higher.',
+  },
+  {
+    term: 'One-shot',
+    meaning: 'A single recorded hit — one kick, one snare — that plays right through every time you trigger it, however long you hold the key.',
+  },
+  {
+    term: 'Sampled instrument',
+    meaning: 'Recordings of several notes of the same instrument, spread across the keyboard so most of what you play is a real recording rather than one stretched a long way.',
+  },
   { term: 'Bounce / render', meaning: 'Turn the whole arrangement into a single audio file.' },
   { term: 'Source tempo', meaning: 'The speed a recording was originally made at. Everything else is worked out from it.' },
   {

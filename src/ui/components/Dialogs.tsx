@@ -8,6 +8,7 @@ import {
 import { copyToClipboard, createShareLink } from '../../lib/share'
 import { formatBytes, knownSamples, deleteSample, putSample, storageUsage } from '../../lib/samples'
 import { bundleFilename, createBundle, installBundleSamples, isBundle, readBundle } from '../../lib/bundle'
+import { installBundleInstruments } from '../../lib/instruments'
 import { projectSampleIds } from '../../music/project'
 import { triggerDownload } from '../../lib/persistence'
 import { contentEndBeat } from '../../music/project'
@@ -108,9 +109,17 @@ export function FilesDialog({ onClose }: { onClose(): void }) {
             if (isBundle(head)) {
               const bundle = await readBundle(file)
               await installBundleSamples(bundle, putSample)
+              // Instruments after audio: they need their samples in place.
+              const added = bundle.instruments.length
+                ? await installBundleInstruments(await engine.resume(), bundle.instruments)
+                : 0
               engine.stop(0)
               setProject(bundle.project, { resetHistory: true })
-              flash(`Opened “${bundle.project.name}” with ${bundle.samples.length} audio file(s)`, 'good')
+              flash(
+                `Opened “${bundle.project.name}” with ${bundle.samples.length} audio file(s)` +
+                (added ? ` and ${added} instrument${added === 1 ? '' : 's'}` : ''),
+                'good',
+              )
             } else {
               setProject(await readProjectFile(file), { resetHistory: true })
               flash('Project opened', 'good')

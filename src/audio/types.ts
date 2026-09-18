@@ -12,8 +12,10 @@ export type InstrumentFamily =
   | 'voice'
   | 'drums'
   | 'world'
+  /** Recorded rather than modelled — anything taken out of a song. */
+  | 'sampled'
 
-export type SynthEngine = 'subtractive' | 'fm' | 'pluck' | 'drum'
+export type SynthEngine = 'subtractive' | 'fm' | 'pluck' | 'drum' | 'sampler'
 
 /** A live, releasable note. Returned by `noteOn` for held/keyboard playing. */
 export interface NoteHandle {
@@ -64,6 +66,11 @@ export interface PresetBase {
   hue: number
   /** Engine-specific parameters; each engine narrows this to its own shape. */
   params: Record<string, unknown>
+  /** Made by the user rather than shipped with the app. */
+  userMade?: boolean
+  /** For an extracted instrument: the song it came out of. */
+  sourceName?: string
+  createdAt?: number
 }
 
 /** One note as the scheduler hands it to an instrument. */

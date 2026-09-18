@@ -12,7 +12,7 @@ import type { DrumPiece } from './drums'
 
 const FAMILY_HUE: Record<InstrumentFamily, number> = {
   keys: 42, plucked: 22, bowed: 344, winds: 188, brass: 28,
-  mallets: 286, synth: 258, bass: 212, voice: 318, drums: 8, world: 150,
+  mallets: 286, synth: 258, bass: 212, voice: 318, drums: 8, world: 150, sampled: 96,
 }
 
 type Def = Partial<PresetBase> &

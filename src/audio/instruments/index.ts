@@ -5,10 +5,16 @@ import { createSubtractive } from './subtractive'
 import { createFM } from './fm'
 import { createPluck, pluckWorkletReady } from './pluck'
 import { createDrums } from './drums'
+import { createSampler } from './sampler'
 
 export { initPluck } from './pluck'
 export * from './presets'
+export * from './library'
 export { kitPieces } from './drums'
+export {
+  createSampler, provideSample, forgetSample, hasSample, samplerSampleIds, zoneFor, noteZones,
+} from './sampler'
+export type { SamplerParams, SamplerZone } from './sampler'
 export type { DrumPiece } from './drums'
 
 /**
@@ -37,6 +43,7 @@ export function createInstrument(ctx: BaseAudioContext, preset: PresetBase): Ins
     case 'subtractive': return createSubtractive(ctx, preset)
     case 'fm': return createFM(ctx, preset)
     case 'drum': return createDrums(ctx, preset)
+    case 'sampler': return createSampler(ctx, preset)
     case 'pluck':
       return pluckWorkletReady(ctx) ? createPluck(ctx, preset) : pluckFallback(ctx, preset)
     default: return createSubtractive(ctx, preset)

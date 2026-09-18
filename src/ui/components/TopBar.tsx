@@ -7,7 +7,7 @@ import { usePlayhead } from '../hooks'
 import { RecordButton } from './RecordButton'
 import { Term } from './Term'
 import {
-  Book, Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo,
+  Book, Download, Folder, Help as HelpIcon, Layers, Loop, Metronome, Mic, Play, Plus, Redo, Wand,
   Share, Stop, Undo,
 } from '../icons'
 
@@ -28,11 +28,12 @@ function Jobs() {
   )
 }
 
-export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
+export function TopBar({ onOpenFiles, onExport, onShare, onMashup, onSounds }: {
   onOpenFiles(): void
   onExport(): void
   onShare(): void
   onMashup(): void
+  onSounds(): void
 }) {
   const project = useStore((s) => s.project)
   const playing = useStore((s) => s.playing)
@@ -196,6 +197,12 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup }: {
       ><Book width={14} height={14} /></button>
       <button className="btn icon" onClick={() => setUI({ helpOpen: true })} title="Help (?)"><HelpIcon width={14} height={14} /></button>
 
+      <button
+        className="btn lg" onClick={onSounds}
+        title="Take a song apart into the sounds inside it (G)"
+      >
+        <Wand width={14} height={14} /> Take apart
+      </button>
       <button className="btn lg mashup-btn" onClick={onMashup} title="Mash up two or more songs (M)">
         <Layers width={14} height={14} /> Mashup
       </button>
