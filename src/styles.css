@@ -993,3 +993,36 @@ input[type='range']::-moz-range-thumb {
   color: var(--accent-2); padding: 2px 0;
 }
 .term-link:hover { text-decoration: underline; }
+
+/* take a song apart */
+.sound-group { display: flex; flex-direction: column; gap: 4px; }
+.sound-group-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 6px 2px 2px;
+}
+.sound-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--bg-1);
+}
+.sound-row.chosen { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.sound-name { font-size: 13px; font-weight: 600; }
+.sound-note {
+  font-size: 11.5px; color: var(--faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sound-rename {
+  width: 100%; max-width: 260px; font-size: 13px; font-weight: 600;
+  padding: 2px 6px; background: transparent; border-color: transparent;
+}
+.sound-rename:hover { border-color: var(--line); }
+.sound-rename:focus { border-color: var(--accent); background: var(--bg-0); }
+.sound-takes { display: flex; gap: 3px; flex: none; }
+.sound-verdict {
+  flex: none; font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.sound-verdict.new { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.sound-verdict.similar { background: var(--bg-2); color: var(--faint); }
+.sound-verdict\.have-it, .sound-verdict.have-it { background: var(--bg-2); color: var(--faint); }

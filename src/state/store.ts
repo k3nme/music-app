@@ -48,7 +48,7 @@ export interface UIState {
    * A dialog a lesson asked for. App owns dialog state, so lessons post a
    * request here rather than reaching across into it.
    */
-  pendingDialog: 'mashup' | 'ideas' | 'demo-project' | null
+  pendingDialog: 'mashup' | 'ideas' | 'demo-project' | 'sounds' | null
   /**
    * 'guided' hides the parts of the studio that assume you already know a DAW.
    * It switches itself off once the user has made something.

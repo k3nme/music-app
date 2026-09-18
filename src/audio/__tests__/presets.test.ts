@@ -52,6 +52,8 @@ describe('instrument library', () => {
 
   it('has at least one instrument in every family it advertises', () => {
     for (const family of FAMILY_ORDER) {
+      // 'sampled' is the user's own shelf — empty until they take a song apart.
+      if (family === 'sampled') continue
       const members = ALL_PRESETS.filter((p) => p.family === family)
       expect(members.length, family).toBeGreaterThan(0)
     }

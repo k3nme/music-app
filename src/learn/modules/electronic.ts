@@ -310,6 +310,16 @@ export const electronicModule: Module = {
           'back. Every one of these is a preset you can start from and change.',
           { kind: 'open-instruments' },
         ),
+        text(
+          'And when you want a sound that is not a preset at all — the exact kick off a record you ' +
+          'love, or a voice — take the song apart and keep it. It becomes an instrument you can ' +
+          'play like any other.',
+        ),
+        tryThis(
+          'Drop a song into Take a song apart. It separates the layers, finds the individual sounds ' +
+          'inside them, and tells you which ones your library does not already cover.',
+          { kind: 'open-sounds' },
+        ),
       ],
     },
   ],

@@ -27,7 +27,7 @@ await page.goto(process.env.APP_URL ?? 'http://localhost:5173', { waitUntil: 'ne
 // --- first run -------------------------------------------------------------
 await page.waitForSelector('.door')
 const doors = await page.locator('.door-title').allTextContents()
-record('First run offers four plain-language doors', doors.length === 4, doors.join(' · '))
+record('First run offers five plain-language doors', doors.length === 5, doors.join(' · '))
 record('No door assumes music knowledge',
   doors.every((d) => !/DAW|BPM|MIDI|key|scale|quantis/i.test(d)), doors.join(' · '))
 await page.screenshot({ path: 'scripts/screenshots/first-run.png' })

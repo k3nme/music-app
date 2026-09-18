@@ -20,6 +20,7 @@ node scripts/chords-e2e.mjs   # chord capture with a fake mic
 node scripts/audio-e2e.mjs    # import, warp, separate, render, bundle
 node scripts/mashup-e2e.mjs   # the Mashup Lab, end to end
 node scripts/learn-e2e.mjs    # first-run doors, Learn mode, glossary
+node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
 ```
 
 ## Ground rules
@@ -39,6 +40,19 @@ the sound. The library is split by tradition (`presets-electronic`,
 in `preset-kit.ts`; `presets.ts` aggregates them and owns the lookups. A unit
 test checks ids, ranges, families and kit pieces, so a preset that would be
 silent or unreachable fails there rather than in someone's ear.
+
+**The library is a registry, not an array.** `getPreset`, `searchPresets` and
+`allPresets` live in `instruments/library.ts` and see the user's own sampled
+instruments as well as the built-ins. Never resolve a preset id against
+`ALL_PRESETS` — that is the built-ins only, and a track playing something taken
+out of a song would silently fall back to a piano. React subscribes with
+`onLibraryChange`/`libraryRevision`.
+
+**Sampled instruments need their audio before they are played.** `createInstrument`
+is synchronous, so `sampler.ts` reads buffers from a cache the caller fills
+first (`provideSample`), exactly like `resolveAudio` does for audio clips.
+`restoreInstruments` does it at boot; `hydrateInstrument` does it when a bundle
+brings one in. A zone whose buffer is missing plays silence rather than throwing.
 
 **Analysis and DSP stay pure.** `src/audio/analysis/*` and `src/audio/spectral/*`
 have no Web Audio and no DOM, so they run identically in a worker and in tests.
@@ -81,6 +95,25 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **A gate in the middle of a measurement is a cliff.** The sound fingerprint
+  used to report pitch clarity as 0 below a confidence threshold. Two hits of
+  the same kick landing either side of it came back as 0.74 and 0.0 and
+  clustered as different instruments. Gate the *conclusion* (is there a pitch?),
+  never the measurement a comparison is built on.
+- **A fingerprint must not move when the cut does.** Slices start a few
+  milliseconds apart depending on where the onset landed, and one at the very
+  start of a file cannot back up at all. `fingerprint` aligns to the attack
+  first; before it did, the same drum was 0.30 from itself and 0.33 from a hat.
+- **`cutSlice` fades in over 0.8 ms, not 4.** A percussive sound *is* its
+  attack; a 4 ms ramp over the front of a kick makes it a different kick.
+- **`kitPieces` answers for two engines.** A sampled kit keeps its pads in
+  `params.zones`, not `params.pieces`. Anything reading a kit — the drum grid,
+  Ideas, the tests — must go through `kitPieces`, or it sees an empty kit and
+  makes no sound at all.
+- **Onset thresholds have to be causal.** A snare's noise tail puts out steady
+  flux; against a window centred on itself it keeps clearing the bar, and one
+  snare becomes four. Compare against the 90 ms *before* the peak — and not
+  much more than that, or the silence before the hit drags the median down.
 - **Worklet messages and offline rendering.** `port.postMessage` in the same
   task as `startRendering()` is never delivered. Offline instruments buffer
   their schedule and pass it via `processorOptions`; `export.ts` calls
@@ -110,7 +143,7 @@ change the project and let it flow.
   the key/scale selects and the grid controls. If you add a control that assumes
   DAW knowledge, check what it does in guided mode before shipping it.
 - **The browser suites open the app through the first-run doors.** If you change
-  the door labels, five test scripts need updating with them.
+  the door labels or how many there are, the test scripts need updating too.
 - **Demo tracks are reused across lessons.** `learn/player.ts` keys a hidden
   track per preset, and `ensureTrack` only applies channel settings when it
   builds the channel — so the player calls `updateChannel` every time. Forget

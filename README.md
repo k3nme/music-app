@@ -27,7 +27,7 @@ npm run dev        # http://localhost:5173
 
 ![The first run](docs/screenshot-firstrun.png)
 
-Four doors, phrased as things you might want to do rather than DAW features.
+Five doors, phrased as things you might want to do rather than DAW features.
 Two of them need no music knowledge at all. New users land in a simplified
 view that hides the key and scale controls and suggests a next step based on
 what the project actually contains; one click leaves it for good.
@@ -80,7 +80,8 @@ effect), transpose to the project key, and trim, fade and reverse like any DAW.
 timeline at the beat it started on.
 
 **Separate stems.** Any clip splits into vocals, drums, bass and other, each on
-its own track.
+its own track — or go further and pull the individual sounds out of those
+layers as playable instruments (below).
 
 ### Mash things up
 
@@ -98,6 +99,40 @@ Plenty of recordings — older film music, a lot of Indian and Arabic repertoire
 anything cut to tape — sit tens of cents off A440. Overtone measures each track's
 actual tuning reference and folds the correction into the transposition, so a
 song cut 30 cents flat lands in tune rather than between two semitones.
+
+### Take a song apart, and keep what is in it
+
+Drop in a song. Overtone separates it, finds the **individual sounds** inside
+each layer, and hands them back as instruments you can play.
+
+It works by asking three questions in order. *Where are the hits?* — spectral
+flux onsets, thresholded against the 90 ms before each peak, so a snare's noise
+tail doesn't register as four more snares. *What is each one?* — brightness,
+noisiness, band balance, attack and decay, how many separate attacks are in the
+first 60 ms (a hand clap has three or four; a snare has one), and whether it has
+a pitch at all. *Which of these are the same sound played again?* — every slice
+is fingerprinted and clustered, so ninety kicks collapse into one kick that
+plays ninety times, with the cleanest take chosen as the one to keep.
+
+Pitched sounds keep **several notes** where the song provides them, spread
+across the range, because one recording stretched over five octaves sounds like
+one recording stretched over five octaves.
+
+Then the part that stops your library filling up with near-duplicates: each
+sound is compared against every built-in instrument that could plausibly be it —
+a kick against every kick in the app, not against every sound ever made — and
+labelled **have it**, **similar** or **new**. Nearly every dance record's hi-hat
+is one you already own. The ones that aren't are the ones worth keeping.
+
+Keep what you want and it becomes a real instrument: drums land on one kit laid
+out on the usual notes (so a pattern written for the 909 plays on a kit made out
+of your record), and pitched sounds become playable instruments with a zone per
+recorded note. They persist across reloads, appear in the picker under **Your
+sounds**, and travel inside a project bundle — so a track you send someone
+arrives with its instruments, not just their names.
+
+This is the only part of the app that is not synthesised, which is why it needed
+a sampler engine underneath it.
 
 ### Build the track
 
@@ -148,6 +183,9 @@ src/
       fm.ts              routable operators          (EPs, bells, mallets, brass)
       pluck.ts           extended Karplus-Strong     (guitars, sitar, harp, piano)
       drums.ts           procedural percussion, incl. log drums and build FX
+      sampler.ts         the one engine that plays recordings, not models
+      library.ts         preset lookups over built-ins + the user's own
+      match.ts           "do I already have something that sounds like this?"
       preset-kit.ts      the builders every preset file shares
       presets.ts         the instrument library, and what it all adds up to
       presets-electronic.ts  EDM synths, basses, and the transitions kit
@@ -155,6 +193,9 @@ src/
       presets-world.ts       Asia, the Middle East, Latin America
       presets-orchestral.ts  the rest of the orchestra, and vintage keys
     pump.ts              sidechain duck envelopes (pure, so it is tested)
+    analysis/
+      sounds.ts          onsets, slicing, features, classification, fingerprints
+      dissect.ts         a separated song -> the distinct sounds inside it
     spectral/
       fft.ts             radix-2 FFT, windows, cached plans
       stft.ts            streaming frame iterator + block STFT/ISTFT
@@ -274,6 +315,7 @@ node scripts/chords-e2e.mjs   # strums chords into it
 node scripts/audio-e2e.mjs    # imports a song, warps it, separates it, bundles it
 node scripts/mashup-e2e.mjs   # mashes two songs of different tempo, key and tuning
 node scripts/learn-e2e.mjs    # the first-run doors, the lessons and the glossary
+node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
 ```
 
 The unit tests cover the parts where being wrong is silent: pitch detection
@@ -289,6 +331,11 @@ A–C–E–D comes back as exactly those notes on a sitar, and that a strummed
 Am–F–C–G comes back as those four chords in order. `audio-e2e.mjs` builds a
 song in-page, imports it as a dropped file and checks tempo, key, tuning,
 warping in both directions, offline render, separation and bundling.
+`sounds-e2e.mjs` builds a song, takes it apart through the UI, keeps the
+result, renders it to check it makes a sound across its whole range, **reloads
+the page** and renders again — an instrument that does not survive a reload is
+a temporary file, not an instrument — and finally checks a bundle carries it.
+
 `mashup-e2e.mjs` drives the lab with two songs that differ in tempo, key,
 tuning reference and stereo layout.
 
@@ -316,6 +363,16 @@ arrangement canvas.
   double-tracked vocal, a mono recording, or a dense wall-of-sound mix will all
   defeat it, and you will hear bleed between parts on anything. It is good
   enough to build a mashup on; it is not a studio multitrack.
+- **Sounds pulled out of a song carry their surroundings.** Extraction starts
+  from stem separation, so it inherits every limit below — a kick lifted out of
+  a dense mix has some bass under it, and a "voice" from a track with no vocal
+  is whatever was centred. Sparse, well-separated records give clean one-shots;
+  a wall of sound gives you smeared ones. It also cannot hear a sound that never
+  plays alone anywhere in the song.
+- **The "do you already have this" check is a similarity measure, not a
+  judgement.** It compares band balance and envelope shape against the library.
+  Two kicks that measure alike can still be the two you would never swap, and it
+  says nothing about which is better — only that they are close.
 - **Time-stretching shows past about 15%.** The phase vocoder is phase-locked
   and resets on transients, which holds up well for moderate moves. Beyond
   roughly 15% you will hear it, particularly on drums. The lab suggests half or

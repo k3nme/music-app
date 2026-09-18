@@ -895,34 +895,20 @@ export const DRUM_PRESETS: PresetBase[] = [
 
 export const ALL_PRESETS: PresetBase[] = [...MELODIC_PRESETS, ...DRUM_PRESETS]
 
-const BY_ID = new Map(ALL_PRESETS.map((p) => [p.id, p]))
-
-export function getPreset(id: string): PresetBase {
-  return BY_ID.get(id) ?? MELODIC_PRESETS[0]
-}
-
-export function isDrumPreset(id: string): boolean {
-  return BY_ID.get(id)?.engine === 'drum'
-}
+/** Fallback for a preset id that no longer exists anywhere. */
+export const FALLBACK_PRESET: PresetBase = MELODIC_PRESETS[0]
 
 export const FAMILY_LABELS: Record<InstrumentFamily, string> = {
   keys: 'Keys', plucked: 'Guitars & strings', bowed: 'Bowed strings', winds: 'Winds',
   brass: 'Brass', mallets: 'Mallets & bells', synth: 'Synths', bass: 'Bass',
   voice: 'Voices', drums: 'Drums & percussion', world: 'World',
+  sampled: 'Your sounds',
 }
 
 /** Family display order in the instrument picker. */
 export const FAMILY_ORDER: InstrumentFamily[] = [
-  'keys', 'plucked', 'bowed', 'winds', 'brass', 'mallets', 'world', 'synth', 'bass', 'voice', 'drums',
+  'sampled', 'keys', 'plucked', 'bowed', 'winds', 'brass', 'mallets', 'world',
+  'synth', 'bass', 'voice', 'drums',
 ]
 
-export function searchPresets(query: string): PresetBase[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return ALL_PRESETS
-  return ALL_PRESETS.filter((p) =>
-    p.name.toLowerCase().includes(q) ||
-    p.family.includes(q) ||
-    p.blurb.toLowerCase().includes(q) ||
-    p.tags.some((t) => t.includes(q)),
-  )
-}
+

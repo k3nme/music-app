@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { engine } from '../../audio/engine'
 import {
-  ALL_PRESETS, FAMILY_LABELS, FAMILY_ORDER, getPreset, searchPresets,
+  allPresets, FAMILY_LABELS, FAMILY_ORDER, getPreset, libraryRevision, onLibraryChange,
+  searchPresets,
 } from '../../audio/instruments'
 import type { InstrumentFamily, PresetBase } from '../../audio/types'
 import { useStore } from '../../state/store'
@@ -11,7 +12,7 @@ import { Close } from '../icons'
 const AUDITION: Record<InstrumentFamily, number[]> = {
   keys: [0, 4, 7, 12], plucked: [0, 7, 12, 16], bowed: [0, 3, 7], winds: [0, 2, 4, 7],
   brass: [0, 4, 7], mallets: [0, 4, 7, 12], synth: [0, 3, 7, 10], bass: [0, 0, 5, 0],
-  voice: [0, 4, 7], world: [0, 2, 5, 7], drums: [],
+  voice: [0, 4, 7], world: [0, 2, 5, 7], drums: [], sampled: [0, 4, 7, 12],
 }
 
 export function InstrumentPicker() {
@@ -20,6 +21,10 @@ export function InstrumentPicker() {
   const { setUI, setTrackPreset, addTrack, flash } = useStore.getState()
 
   const currentTrack = project.tracks.find((t) => t.id === target)
+  // The library grows at runtime — anything the user takes out of a song lands
+  // here without a reload — so the picker subscribes rather than snapshotting.
+  const revision = useSyncExternalStore(onLibraryChange, libraryRevision)
+  const library = useMemo(() => allPresets(), [revision])
   const [query, setQuery] = useState('')
   const [family, setFamily] = useState<InstrumentFamily | 'all'>('all')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -37,15 +42,15 @@ export function InstrumentPicker() {
   }, [])
 
   const results = useMemo(() => {
-    const pool = query ? searchPresets(query) : ALL_PRESETS
+    const pool = query ? searchPresets(query) : library
     return family === 'all' ? pool : pool.filter((p) => p.family === family)
-  }, [query, family])
+  }, [query, family, library])
 
   const counts = useMemo(() => {
     const map = new Map<InstrumentFamily, number>()
-    for (const preset of ALL_PRESETS) map.set(preset.family, (map.get(preset.family) ?? 0) + 1)
+    for (const preset of library) map.set(preset.family, (map.get(preset.family) ?? 0) + 1)
     return map
-  }, [])
+  }, [library])
 
   const audition = async (preset: PresetBase) => {
     await engine.resume()
@@ -99,7 +104,8 @@ export function InstrumentPicker() {
               {target === 'new' ? 'Add an instrument' : `Instrument for ${currentTrack?.name ?? 'track'}`}
             </div>
             <div className="sheet-sub">
-              {ALL_PRESETS.length} instruments, all synthesised — click one to hear it.
+              {library.length} instruments — click one to hear it. All synthesised, except
+              anything you have taken out of a song yourself.
             </div>
           </div>
           <div className="spacer" />
@@ -120,9 +126,9 @@ export function InstrumentPicker() {
           <div className="picker-layout">
             <div className="picker-families">
               <button className={`fam ${family === 'all' ? 'on' : ''}`} onClick={() => setFamily('all')}>
-                All instruments <span className="fam-count">{ALL_PRESETS.length}</span>
+                All instruments <span className="fam-count">{library.length}</span>
               </button>
-              {FAMILY_ORDER.map((f) => (
+              {FAMILY_ORDER.filter((f) => (counts.get(f) ?? 0) > 0).map((f) => (
                 <button key={f} className={`fam ${family === f ? 'on' : ''}`} onClick={() => setFamily(f)}>
                   {FAMILY_LABELS[f]} <span className="fam-count">{counts.get(f) ?? 0}</span>
                 </button>

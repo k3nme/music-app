@@ -14,17 +14,39 @@
 import { migrate } from './persistence'
 import type { Project } from '../music/project'
 import { projectSampleIds } from '../music/project'
+import { getPreset, samplerSampleIds } from '../audio/instruments'
+import type { PresetBase } from '../audio/types'
 import {
   getSampleBlob, getSampleMeta, rememberSample, type SampleMeta,
 } from './samples'
 
 const MAGIC = 'OVTNBNDL'
-const VERSION = 1
+const VERSION = 2
 
 interface BundleHeader {
   version: number
   project: Project
   samples: { meta: SampleMeta; byteLength: number }[]
+  /**
+   * Sampled instruments the project plays. Without these a bundle opened
+   * elsewhere would have tracks pointing at instruments that machine has never
+   * heard of — which is exactly the silent substitution this app refuses to do
+   * anywhere else.
+   */
+  instruments?: PresetBase[]
+}
+
+/** The user-made instruments a project's tracks actually use. */
+export function projectInstruments(project: Project): PresetBase[] {
+  const seen = new Set<string>()
+  const out: PresetBase[] = []
+  for (const track of project.tracks) {
+    if (seen.has(track.presetId)) continue
+    seen.add(track.presetId)
+    const preset = getPreset(track.presetId)
+    if (preset.id === track.presetId && preset.userMade) out.push(preset)
+  }
+  return out
 }
 
 /**
@@ -39,9 +61,15 @@ function stripDrawingData(meta: SampleMeta): SampleMeta {
     : rest
 }
 
-/** Pack a project and every sample it uses into one blob. */
+/** Pack a project, every sample it uses, and its own instruments into one blob. */
 export async function createBundle(project: Project): Promise<Blob> {
-  const ids = projectSampleIds(project)
+  const instruments = projectInstruments(project)
+  // A sampled instrument's audio is not referenced by any clip, so it has to
+  // be gathered separately or the instrument would arrive silent.
+  const ids = [...new Set([
+    ...projectSampleIds(project),
+    ...instruments.flatMap((preset) => samplerSampleIds(preset)),
+  ])]
   const parts: BlobPart[] = []
   const samples: BundleHeader['samples'] = []
 
@@ -53,7 +81,7 @@ export async function createBundle(project: Project): Promise<Blob> {
     parts.push(blob)
   }
 
-  const header: BundleHeader = { version: VERSION, project, samples }
+  const header: BundleHeader = { version: VERSION, project, samples, instruments }
   const headerBytes = new TextEncoder().encode(JSON.stringify(header))
 
   const prefix = new Uint8Array(MAGIC.length + 4)
@@ -66,6 +94,7 @@ export async function createBundle(project: Project): Promise<Blob> {
 export interface OpenedBundle {
   project: Project
   samples: { meta: SampleMeta; blob: Blob }[]
+  instruments: PresetBase[]
 }
 
 export function isBundle(bytes: ArrayBuffer): boolean {
@@ -102,7 +131,7 @@ export async function readBundle(file: Blob): Promise<OpenedBundle> {
     offset = end
   }
 
-  return { project: migrate(header.project), samples }
+  return { project: migrate(header.project), samples, instruments: header.instruments ?? [] }
 }
 
 /**

@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import { Layers, Mic, Note as NoteIcon, Play } from '../icons'
+import { Layers, Mic, Note as NoteIcon, Play, Wand } from '../icons'
 
 /**
  * The first thing anyone sees.
  *
  * The old welcome screen offered "start with a groove" or "start empty", which
  * only means something if you already know what a groove or an empty project
- * is for. These four doors are phrased as things you might actually want to
- * do, and each leads somewhere that needs no prior knowledge.
+ * is for. These doors are phrased as things you might actually want to do,
+ * and each leads somewhere that needs no prior knowledge.
  */
 
-export type Door = 'mashup' | 'hum' | 'groove' | 'learn' | 'studio'
+export type Door = 'mashup' | 'hum' | 'sounds' | 'groove' | 'learn' | 'studio'
 
 const DOORS: {
   id: Door
@@ -35,6 +35,14 @@ const DOORS: {
     body: 'Sing, hum or beatbox into your microphone. It becomes real notes you can play on a sitar, a piano, an 808 — anything.',
     tag: 'No music knowledge needed',
     hue: 348,
+  },
+  {
+    id: 'sounds',
+    icon: <Wand width={20} height={20} />,
+    title: 'Take a song apart',
+    body: 'Drop in a song and pull the sounds out of it — the kick, the bass, the voice — as instruments you can play yourself. It tells you which ones you do not already have.',
+    tag: 'No music knowledge needed',
+    hue: 96,
   },
   {
     id: 'groove',

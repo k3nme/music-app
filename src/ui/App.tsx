@@ -3,6 +3,7 @@ import { engine } from '../audio/engine'
 import { demoProject } from '../music/demo'
 import { emptyProject, projectSampleIds } from '../music/project'
 import { hydrateProjectSamples } from '../lib/samples'
+import { restoreInstruments } from '../lib/instruments'
 import { GRID_OPTIONS } from '../music/quantize'
 import { loadLastProject, saveProject } from '../lib/persistence'
 import { readShareLink } from '../lib/share'
@@ -18,13 +19,14 @@ import { HumStudio } from './components/HumStudio'
 import { IdeasButton, IdeasPanel } from './components/IdeasPanel'
 import { InstrumentPicker } from './components/InstrumentPicker'
 import { MashupLab } from './components/MashupLab'
+import { SoundLab } from './components/SoundLab'
 import { Keyboard } from './components/Keyboard'
 import { Mixer } from './components/Mixer'
 import { PianoRoll } from './components/PianoRoll'
 import { TopBar } from './components/TopBar'
 import { Note as NoteIcon, Piano, Sliders } from './icons'
 
-type Dialog = 'files' | 'export' | 'share' | 'ideas' | 'mashup' | null
+type Dialog = 'files' | 'export' | 'share' | 'ideas' | 'mashup' | 'sounds' | null
 
 export function App() {
   const project = useStore((s) => s.project)
@@ -91,8 +93,26 @@ export function App() {
     setStarted(true)
     if (door === 'hum') useStore.getState().setUI({ humOpen: true })
     if (door === 'mashup') setDialog('mashup')
+    if (door === 'sounds') setDialog('sounds')
     if (door === 'learn') useStore.getState().setUI({ learnOpen: true })
   }, [])
+
+  // --- put the user's own instruments back on the shelf -------------------
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!started || restored.current) return
+    restored.current = true
+    void (async () => {
+      const ctx = await engine.resume()
+      const { silent } = await restoreInstruments(ctx)
+      if (silent.length > 0) {
+        useStore.getState().flash(
+          `${silent.join(', ')} ${silent.length > 1 ? 'have' : 'has'} no audio in this browser`,
+          'warn',
+        )
+      }
+    })()
+  }, [started])
 
   // --- keep stored audio loaded for whatever the project references --------
   const hydrated = useRef(new Set<string>())
@@ -174,6 +194,9 @@ export function App() {
         case 'KeyM':
           if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'mashup' ? null : 'mashup')) }
           break
+        case 'KeyG':
+          if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'sounds' ? null : 'sounds')) }
+          break
         case 'KeyQ':
           if (letterShortcutsLive) {
             e.preventDefault()
@@ -252,6 +275,7 @@ export function App() {
         onExport={() => setDialog('export')}
         onShare={() => setDialog('share')}
         onMashup={() => setDialog('mashup')}
+        onSounds={() => setDialog('sounds')}
       />
 
       <div className="main">
@@ -335,6 +359,7 @@ export function App() {
       {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
       {dialog === 'ideas' && <IdeasPanel onClose={() => setDialog(null)} />}
       {dialog === 'mashup' && <MashupLab onClose={() => setDialog(null)} />}
+      {dialog === 'sounds' && <SoundLab onClose={() => setDialog(null)} />}
 
       {experience === 'guided' && (
         <NextStep

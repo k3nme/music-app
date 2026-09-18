@@ -58,6 +58,7 @@ export type Block =
 export type TryAction =
   | { kind: 'open-hum' }
   | { kind: 'open-mashup' }
+  | { kind: 'open-sounds' }
   | { kind: 'open-ideas' }
   | { kind: 'open-instruments' }
   | { kind: 'load-demo-project' }

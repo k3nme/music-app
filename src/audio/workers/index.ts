@@ -7,6 +7,7 @@
  */
 
 import type { AudioAnalysis } from '../analysis/audio'
+import type { DissectOptions, ExtractedSound } from '../analysis/dissect'
 import type { StemOptions, StemSet } from '../spectral/stems'
 
 export interface JobProgress {
@@ -71,6 +72,24 @@ export function separateStemsInWorker(
 ): Promise<StemSet> {
   const { data, transfer } = copies(channels)
   return run<StemSet>({ kind: 'stems', channels: data, sampleRate, options }, transfer, onProgress)
+}
+
+/**
+ * Separate a song and pull the distinct sounds out of it. The heaviest job in
+ * the app — a four-minute track is tens of seconds — so it reports progress
+ * in stages the UI can name.
+ */
+export async function dissectInWorker(
+  channels: Float32Array[], sampleRate: number,
+  options?: Omit<DissectOptions, 'onProgress'>,
+  onProgress?: (progress: JobProgress) => void,
+): Promise<ExtractedSound[]> {
+  const { data, transfer } = copies(channels)
+  const sounds = await run<(ExtractedSound & { bestIndex: number })[]>(
+    { kind: 'dissect', channels: data, sampleRate, options }, transfer, onProgress,
+  )
+  // Re-link the exemplar: it crossed as an index so its audio travelled once.
+  return sounds.map((sound) => ({ ...sound, best: sound.takes[sound.bestIndex] ?? sound.takes[0] }))
 }
 
 export function warpInWorker(
