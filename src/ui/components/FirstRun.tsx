@@ -10,7 +10,7 @@ import { Layers, Mic, Note as NoteIcon, Play, Wand } from '../icons'
  * and each leads somewhere that needs no prior knowledge.
  */
 
-export type Door = 'mashup' | 'hum' | 'sounds' | 'groove' | 'learn' | 'studio'
+export type Door = 'song' | 'mashup' | 'hum' | 'sounds' | 'groove' | 'learn' | 'studio'
 
 const DOORS: {
   id: Door
@@ -20,6 +20,14 @@ const DOORS: {
   tag: string
   hue: number
 }[] = [
+  {
+    id: 'song',
+    icon: <Wand width={20} height={20} />,
+    title: 'Write me a song',
+    body: 'Describe what you want — "sad piano over a slow beat", "hard techno" — and a whole track gets written: drums, bass, chords, melody and arrangement.',
+    tag: 'No music knowledge needed',
+    hue: 268,
+  },
   {
     id: 'mashup',
     icon: <Layers width={20} height={20} />,

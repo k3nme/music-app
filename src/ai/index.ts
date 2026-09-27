@@ -61,4 +61,5 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   drums: 'Drums',
   harmony: 'Harmony',
   arrangement: 'Arrangement',
+  song: 'A whole song',
 }

@@ -27,7 +27,7 @@ npm run dev        # http://localhost:5173
 
 ![The first run](docs/screenshot-firstrun.png)
 
-Five doors, phrased as things you might want to do rather than DAW features.
+Six doors, phrased as things you might want to do rather than DAW features.
 Two of them need no music knowledge at all. New users land in a simplified
 view that hides the key and scale controls and suggests a next step based on
 what the project actually contains; one click leaves it for good.
@@ -99,6 +99,38 @@ Plenty of recordings — older film music, a lot of Indian and Arabic repertoire
 anything cut to tape — sit tens of cents off A440. Overtone measures each track's
 actual tuning reference and folds the correction into the transposition, so a
 song cut 30 cents flat lands in tune rather than between two semitones.
+
+### Ask for a song and get one
+
+![Writing a song from a prompt](docs/screenshot-songmaker.png)
+
+Type what you want — *"a dark amapiano track at 112 with a sad piano"*, *"chilled
+lo-fi to study to, no lead"*, *"hard techno, 140, industrial"* — and a whole
+arrangement gets written: drums, bass, chords, pad, melody, transitions, a rough
+mix with the sidechain set up, and a structure that goes somewhere.
+
+It reads the prompt for a genre, a tempo, a key, a mood, named instruments, what
+to leave out and how long it should be, then shows you **what it understood**
+before it plays anything. That last part matters more than the music: a guess
+you cannot see or change is worse than no guess.
+
+Then it composes. A progression from the style, a bass line that follows it, a
+chord part voiced to stay in one register, a **melody built from one phrase and
+its variations** — because what makes a tune a tune rather than a run of in-key
+notes is that it repeats itself — a drum pattern thinned out in quiet sections,
+and an arrangement where parts enter and drop out. Dance styles get intro →
+build → drop → breakdown → build → drop → outro with a riser into each drop;
+everything else gets verses and choruses.
+
+You get **three versions** of the same brief, each auditionable before you keep
+one, and "three more versions" for another go. Keeping one replaces the
+timeline, and one undo puts back whatever was there.
+
+It is not a model and does not pretend to be. It is the same music theory the
+Learn module teaches, applied by rule — which is why it runs instantly, offline,
+and can explain every choice. Where a model would genuinely do better, the
+`MusicProvider` seam is where it plugs in: `'song'` is just another capability,
+and a remote one would return the same kind of suggestion.
 
 ### Take a song apart, and keep what is in it
 
@@ -316,6 +348,7 @@ node scripts/audio-e2e.mjs    # imports a song, warps it, separates it, bundles 
 node scripts/mashup-e2e.mjs   # mashes two songs of different tempo, key and tuning
 node scripts/learn-e2e.mjs    # the first-run doors, the lessons and the glossary
 node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
+node scripts/song-e2e.mjs     # write a song from a prompt, play it, keep it, undo
 ```
 
 The unit tests cover the parts where being wrong is silent: pitch detection
@@ -331,6 +364,13 @@ A–C–E–D comes back as exactly those notes on a sitar, and that a strummed
 Am–F–C–G comes back as those four chords in order. `audio-e2e.mjs` builds a
 song in-page, imports it as a dropped file and checks tempo, key, tuning,
 warping in both directions, offline render, separation and bundling.
+`song-e2e.mjs` writes a song from a prompt through the UI, plays it, keeps it,
+renders it, and checks three things the unit tests cannot: that it is audible,
+that it *rises and falls* rather than being one loop repeated, and that no style
+clips — measured both at the loudest moment and across a whole render, because
+the shared reverb and delay accumulate over three minutes and a mix that
+measures fine over eight bars can still be over by the last chorus.
+
 `sounds-e2e.mjs` builds a song, takes it apart through the UI, keeps the
 result, renders it to check it makes a sound across its whole range, **reloads
 the page** and renders again — an instrument that does not survive a reload is
@@ -363,6 +403,14 @@ arrangement canvas.
   double-tracked vocal, a mono recording, or a dense wall-of-sound mix will all
   defeat it, and you will hear bleed between parts on anything. It is good
   enough to build a mashup on; it is not a studio multitrack.
+- **The songwriter writes competently, not creatively.** It knows what a style
+  is made of and puts that together correctly — in key, in range, in time, with
+  a shape. It has no taste, no surprise and no idea what any of it is *about*.
+  It is a good first draft and a very good way to stop staring at an empty
+  timeline; it is not a producer.
+- **It only knows the styles it has profiles for.** Twelve of them. Ask for
+  something outside that list and it picks the nearest thing it has and tells
+  you so, rather than pretending.
 - **Sounds pulled out of a song carry their surroundings.** Extraction starts
   from stem separation, so it inherits every limit below — a kick lifted out of
   a dense mix has some bass under it, and a "voice" from a track with no vocal

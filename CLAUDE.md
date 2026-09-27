@@ -21,6 +21,7 @@ node scripts/audio-e2e.mjs    # import, warp, separate, render, bundle
 node scripts/mashup-e2e.mjs   # the Mashup Lab, end to end
 node scripts/learn-e2e.mjs    # first-run doors, Learn mode, glossary
 node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
+node scripts/song-e2e.mjs     # write a song from a prompt, play it, keep it, undo
 ```
 
 ## Ground rules
@@ -85,6 +86,19 @@ offline render and the lesson player alike. It sits on the absolute song grid so
 it lands on the beat whatever the drums are doing. Channel graph is
 `... -> fader -> pump -> master`, so the sends breathe with the track.
 
+**A style is one idea, in one place.** `src/ai/styles.ts` holds tempo, kit,
+groove, tonality, progressions, instrument casting, duck amount and song shape
+per genre. The Ideas panel reads the groove; the composer reads all of it. Add a
+genre there and both get it. A preset named in a style is checked against the
+real library by a test, so a typo fails in vitest rather than silently giving
+someone a piano.
+
+**Generated songs need headroom in two places.** Every part plays from the first
+bar, and the shared reverb and delay keep accumulating across a long render — a
+mix that measures fine over eight bars can be over unity by the last chorus. The
+composer lowers the faders *and* the master returns. `scripts/song-e2e.mjs`
+checks both a window around the loudest moment and a whole song end to end.
+
 **Suggestions never mutate.** `Suggestion.apply` returns a new project. This is
 what keeps undo working, and it's the contract that would make a remote
 provider safe.
@@ -95,6 +109,15 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **Anything that decides for the user shows its working.** `SongBrief.reasons`
+  and `Suggestion.reasons` are shown in the UI. A guess you cannot see or
+  change is worse than no guess, and it is the difference between a feature
+  people trust and one they turn off.
+- **Generation is seeded, never random.** Same prompt and seed, same song; a
+  new seed is "another version". Without that there is nothing to assert on and
+  no way to get back a take someone liked.
+- **A bare letter is not a key.** `readKey` needs an accidental or a quality.
+  Reading the first `[a-g]` it saw turned "a happy track in F minor" into G.
 - **A gate in the middle of a measurement is a cliff.** The sound fingerprint
   used to report pitch clarity as 0 below a confidence threshold. Two hits of
   the same kick landing either side of it came back as 0.74 and 0.0 and

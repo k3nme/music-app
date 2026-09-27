@@ -59,6 +59,7 @@ export type TryAction =
   | { kind: 'open-hum' }
   | { kind: 'open-mashup' }
   | { kind: 'open-sounds' }
+  | { kind: 'open-song' }
   | { kind: 'open-ideas' }
   | { kind: 'open-instruments' }
   | { kind: 'load-demo-project' }

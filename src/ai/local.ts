@@ -8,7 +8,7 @@
  * where that plugs in.
  */
 
-import { getPreset } from '../audio/instruments'
+import { allPresets, getPreset } from '../audio/instruments'
 import { DEFAULT_CHANNEL } from '../audio/engine'
 import { uid } from '../lib/id'
 import {
@@ -18,6 +18,9 @@ import {
   chordNotes, diatonicChord, NOTE_NAMES, PROGRESSIONS, SCALES, snapToScale,
   type ChordQuality,
 } from '../music/theory'
+import { composeSong, describePlan, planSong } from './compose'
+import { describeBrief, readPrompt } from './prompt'
+import { STYLES, type Style } from './styles'
 import type { Capability, MusicalContext, MusicProvider, Suggestion } from './types'
 
 // ---------------------------------------------------------------------------
@@ -246,147 +249,14 @@ function bassSuggestions(context: MusicalContext): Suggestion[] {
 // Drums
 // ---------------------------------------------------------------------------
 
-interface DrumStyle {
-  name: string
-  detail: string
-  kit: string
-  bpmHint: [number, number]
-  /** Steps are sixteenths: [piece midi, step index, velocity]. */
-  steps: [number, number, number][]
-}
-
-const K = 36, S = 38, CL = 39, HC = 42, HO = 46
-
-const DRUM_STYLES: DrumStyle[] = [
-  {
-    name: 'Four on the floor', detail: 'House and progressive — kick every beat, offbeat hats.',
-    kit: 'kit-909', bpmHint: [118, 132],
-    steps: [
-      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
-      ...[4, 12].map((s) => [CL, s, 0.85] as [number, number, number]),
-      ...[2, 6, 10, 14].map((s) => [HO, s, 0.5] as [number, number, number]),
-      ...[0, 4, 8, 12].map((s) => [HC, s, 0.4] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Boom bap', detail: 'Classic hip-hop swing — kick on 1 and the and of 2.',
-    kit: 'kit-lofi', bpmHint: [80, 96],
-    steps: [
-      [K, 0, 1], [K, 6, 0.9], [K, 10, 0.75],
-      [S, 4, 0.9], [S, 12, 0.9],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [HC, s, s % 4 === 0 ? 0.55 : 0.35] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Trap', detail: 'Half-time snare with rolling hats.',
-    kit: 'kit-trap', bpmHint: [130, 160],
-    steps: [
-      [K, 0, 1], [K, 3, 0.8], [K, 8, 0.95], [K, 11, 0.7],
-      [S, 8, 0.95],
-      ...Array.from({ length: 16 }, (_, s) => [HC, s, s % 4 === 0 ? 0.55 : 0.32] as [number, number, number]),
-      [HC, 13, 0.4], [HC, 14, 0.45], [HC, 15, 0.5],
-    ],
-  },
-  {
-    name: 'Rock beat', detail: 'Straight backbeat on a live kit.',
-    kit: 'kit-acoustic', bpmHint: [90, 150],
-    steps: [
-      [K, 0, 1], [K, 8, 0.95], [K, 10, 0.7],
-      [S, 4, 0.95], [S, 12, 0.95],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [HC, s, s % 4 === 0 ? 0.6 : 0.4] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Teental (tabla)', detail: 'A 16-beat North Indian cycle — Dha Dhin Dhin Dha.',
-    kit: 'kit-tabla', bpmHint: [60, 140],
-    steps: [
-      [45, 0, 1], [41, 2, 0.75], [41, 4, 0.75], [45, 6, 0.9],
-      [45, 8, 0.85], [41, 10, 0.75], [40, 12, 0.8], [36, 14, 0.7],
-      [43, 1, 0.4], [43, 5, 0.4], [43, 9, 0.4], [43, 13, 0.4],
-    ],
-  },
-  {
-    name: 'Amapiano', detail: 'Log drums where the bass line would be. South Africa.',
-    kit: 'kit-amapiano', bpmHint: [108, 118],
-    steps: [
-      [K, 0, 1], [K, 6, 0.9], [K, 12, 0.95],
-      [40, 8, 1], [43, 10, 0.8], [41, 14, 0.9],
-      [39, 4, 0.6],
-      ...[2, 6, 10, 14].map((s) => [70, s, 0.45] as [number, number, number]),
-      ...[0, 8].map((s) => [72, s, 0.3] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Afrobeats', detail: 'The Lagos pop groove — rolling kick, rim, shakers.',
-    kit: 'kit-afrobeats', bpmHint: [98, 112],
-    steps: [
-      [K, 0, 1], [K, 6, 0.9], [K, 10, 0.85],
-      [37, 4, 0.7], [37, 12, 0.7],
-      [40, 14, 0.75], [41, 7, 0.6], [43, 11, 0.6],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [70, s, s % 4 === 0 ? 0.5 : 0.35] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Afro house', detail: 'Four to the floor under layered African percussion.',
-    kit: 'kit-afrohouse', bpmHint: [118, 128],
-    steps: [
-      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
-      ...[4, 12].map((s) => [CL, s, 0.8] as [number, number, number]),
-      ...[2, 6, 10, 14].map((s) => [HO, s, 0.5] as [number, number, number]),
-      [41, 3, 0.7], [43, 7, 0.7], [40, 11, 0.75], [43, 15, 0.7],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [70, s, 0.35] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Techno', detail: 'Hard, dry and mechanical — the Berlin version of four on the floor.',
-    kit: 'kit-techno', bpmHint: [128, 145],
-    steps: [
-      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
-      [CL, 12, 0.75], [70, 6, 0.4], [70, 14, 0.45],
-      ...[2, 6, 10, 14].map((s) => [HO, s, 0.45] as [number, number, number]),
-      ...[1, 3, 5, 7, 9, 11, 13, 15].map((s) => [HC, s, 0.3] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Breakbeat', detail: 'The funk break jungle and drum & bass were built on.',
-    kit: 'kit-breakbeat', bpmHint: [160, 180],
-    steps: [
-      [K, 0, 1], [K, 10, 0.9],
-      [S, 4, 0.95], [S, 12, 0.95], [40, 7, 0.4], [40, 14, 0.45],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [HC, s, s % 4 === 0 ? 0.55 : 0.35] as [number, number, number]),
-      [HO, 6, 0.5],
-    ],
-  },
-  {
-    name: 'Reggaeton', detail: 'The dembow — one syncopated snare figure, repeated.',
-    kit: 'kit-reggaeton', bpmHint: [88, 100],
-    steps: [
-      ...[0, 4, 8, 12].map((s) => [K, s, 1] as [number, number, number]),
-      [S, 3, 0.9], [S, 6, 0.85], [S, 11, 0.9], [S, 14, 0.85],
-      ...[2, 6, 10, 14].map((s) => [HC, s, 0.4] as [number, number, number]),
-      ...[0, 8].map((s) => [70, s, 0.35] as [number, number, number]),
-    ],
-  },
-  {
-    name: 'Latin groove', detail: 'Congas and clave over a steady pulse.',
-    kit: 'kit-latin', bpmHint: [90, 130],
-    steps: [
-      [36, 0, 0.9], [38, 2, 0.7], [40, 3, 0.8], [38, 6, 0.7],
-      [36, 8, 0.9], [38, 10, 0.7], [40, 11, 0.8], [38, 14, 0.7],
-      [47, 0, 0.6], [47, 3, 0.6], [47, 6, 0.6], [47, 10, 0.6], [47, 12, 0.6],
-      ...[0, 2, 4, 6, 8, 10, 12, 14].map((s) => [70, s, 0.3] as [number, number, number]),
-    ],
-  },
-]
-
 function drumSuggestions(context: MusicalContext): Suggestion[] {
   const { project } = context
   const bars = Math.min(4, barsInUse(project))
   const beatsPerBar = project.beatsPerBar
 
   // Offer whatever suits the project tempo first, but keep all of them.
-  const ordered = [...DRUM_STYLES].sort((a, b) => fitScore(b) - fitScore(a))
-  function fitScore(style: DrumStyle) {
+  const ordered = [...STYLES].sort((a, b) => fitScore(b) - fitScore(a))
+  function fitScore(style: Style) {
     const [lo, hi] = style.bpmHint
     return project.bpm >= lo && project.bpm <= hi ? 1 : -Math.min(Math.abs(project.bpm - lo), Math.abs(project.bpm - hi)) / 100
   }
@@ -511,12 +381,54 @@ function arrangementSuggestions(context: MusicalContext): Suggestion[] {
 }
 
 // ---------------------------------------------------------------------------
+// A whole song, from a sentence
+// ---------------------------------------------------------------------------
+
+/**
+ * Write a complete arrangement from a prompt.
+ *
+ * Three takes on the same brief rather than one, because the first answer to
+ * "make me a song" is rarely the one you keep, and hearing three makes it
+ * obvious what you actually wanted.
+ */
+function songSuggestions(context: MusicalContext): Suggestion[] {
+  const prompt = context.prompt ?? ''
+  const base = context.seed ?? 1
+  const available = allPresets().map((preset) => ({
+    id: preset.id, family: preset.family as string, userMade: preset.userMade,
+  }))
+
+  return [0, 1, 2].map((offset) => {
+    // The brief is read at one seed and *rotated* by the take number, so the
+    // three differ by construction. Letting each take re-read at its own seed
+    // looked right and was not: the seed's own choice and the rotation cancel
+    // out often enough that two takes land on the same key and progression.
+    // The seed still varies the casting, the voicings and the melody.
+    const seed = base + offset * 977
+    const brief = readPrompt(prompt, { seed: base, variation: offset })
+    const plan = planSong(brief, seed, available, offset)
+    const song = composeSong(brief, { seed, available, variation: offset })
+    return {
+      id: uid('sug'),
+      capability: 'song' as Capability,
+      title: song.name,
+      detail: `${describeBrief(brief)} · ${describePlan(plan)}`,
+      reasons: brief.reasons,
+      replacesProject: true,
+      // Keep the project's identity so this is an edit of the open document,
+      // not a new file — which is what makes undo put the old one back.
+      apply: (project: Project) => ({ ...song, id: project.id }),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 
 export const localProvider: MusicProvider = {
   id: 'local',
   label: 'Local (theory-based)',
   remote: false,
-  capabilities: ['chords', 'bass', 'drums', 'harmony', 'arrangement'],
+  capabilities: ['chords', 'bass', 'drums', 'harmony', 'arrangement', 'song'],
   async suggest(context: MusicalContext, capability: Capability): Promise<Suggestion[]> {
     switch (capability) {
       case 'chords': return chordSuggestions(context)
@@ -524,6 +436,7 @@ export const localProvider: MusicProvider = {
       case 'drums': return drumSuggestions(context)
       case 'harmony': return harmonySuggestions(context)
       case 'arrangement': return arrangementSuggestions(context)
+      case 'song': return songSuggestions(context)
       default: return []
     }
   },

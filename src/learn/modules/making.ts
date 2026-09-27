@@ -68,6 +68,12 @@ export const arrangingModule: Module = {
           'a bass line, then drums. It fills the other three jobs around whatever you gave it.',
           { kind: 'open-ideas' },
         ),
+        tryThis(
+          'Or go the other way: describe a track in a sentence and have all four jobs written at ' +
+          'once, then pull it apart to see how it was put together. Every part it writes is ' +
+          'doing one of the four.',
+          { kind: 'open-song' },
+        ),
       ],
     },
     {

@@ -23,6 +23,9 @@ if (import.meta.env.DEV) {
     import('./audio/instruments/match'),
     import('./audio/analysis/dissect'),
     import('./lib/instruments'),
+    import('./ai'),
+    import('./ai/prompt'),
+    import('./ai/compose'),
   ]).then((modules) => {
     Object.assign(window, { __overtone: Object.assign({}, ...modules) })
   })
