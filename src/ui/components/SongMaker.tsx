@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { suggest, type Suggestion } from '../../ai'
 import { EXAMPLE_PROMPTS } from '../../ai/prompt'
 import { engine } from '../../audio/engine'
@@ -20,7 +20,23 @@ export function SongMaker({ onClose }: { onClose(): void }) {
   const project = useStore((s) => s.project)
   const { commit, flash } = useStore.getState()
 
+  // Tracks with audio on them: the thing a remix is built around.
+  const audioTracks = useMemo(() => {
+    const withAudio = new Set((project.audioClips ?? []).map((clip) => clip.trackId))
+    return project.tracks.filter((track) => withAudio.has(track.id))
+  }, [project])
+
   const [prompt, setPrompt] = useState('')
+  const [mode, setMode] = useState<'new' | 'remix'>('new')
+  const [keepTracks, setKeepTracks] = useState<string[]>([])
+
+  // Default to remixing when there is something to remix — it is almost
+  // certainly why the panel was opened with audio on the timeline.
+  useEffect(() => {
+    if (audioTracks.length === 0) return
+    setMode('remix')
+    setKeepTracks(audioTracks.map((track) => track.id))
+  }, [audioTracks.length])
   const [items, setItems] = useState<Suggestion[]>([])
   const [working, setWorking] = useState(false)
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000))
@@ -46,13 +62,16 @@ export function SongMaker({ onClose }: { onClose(): void }) {
     stopPreview()
     setWorking(true)
     try {
-      const result = await suggest({ project, prompt, seed: nextSeed }, 'song')
+      const result = await suggest({
+        project, prompt, seed: nextSeed,
+        keep: mode === 'remix' ? keepTracks : undefined,
+      }, 'song')
       setItems(result)
       if (result.length === 0) flash('Could not make anything of that', 'warn')
     } finally {
       setWorking(false)
     }
-  }, [project, prompt, seed, stopPreview, flash])
+  }, [project, prompt, seed, stopPreview, flash, mode, keepTracks])
 
   /**
    * Auditioning swaps the song in, plays it, and puts the old one back. It
@@ -99,7 +118,9 @@ export function SongMaker({ onClose }: { onClose(): void }) {
       <div className="sheet" onPointerDown={(e) => e.stopPropagation()}>
         <div className="sheet-head">
           <div>
-            <div className="sheet-title">Write me a song</div>
+            <div className="sheet-title">
+              {mode === 'remix' ? 'Remix what you have' : 'Write me a song'}
+            </div>
             <div className="sheet-sub">
               Say what you want in your own words. It writes the drums, bass, chords, melody and
               arrangement, and tells you what it understood — all of it on your machine.
@@ -112,18 +133,59 @@ export function SongMaker({ onClose }: { onClose(): void }) {
         </div>
 
         <div className="sheet-body">
+          {audioTracks.length > 0 && (
+            <div className="song-mode">
+              <button
+                className={`mini ${mode === 'remix' ? 'on' : ''}`}
+                onClick={() => setMode('remix')}
+              >Remix what's here</button>
+              <button
+                className={`mini ${mode === 'new' ? 'on' : ''}`}
+                onClick={() => setMode('new')}
+              >Start from nothing</button>
+              {mode === 'remix' && (
+                <span className="song-warn">
+                  Keeps the audio, works at its tempo and key, and writes around it.
+                </span>
+              )}
+            </div>
+          )}
+
+          {mode === 'remix' && audioTracks.length > 0 && (
+            <div className="song-keep">
+              {audioTracks.map((track) => (
+                <label key={track.id} className={`song-keep-track${keepTracks.includes(track.id) ? ' on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={keepTracks.includes(track.id)}
+                    onChange={() => setKeepTracks((current) => current.includes(track.id)
+                      ? current.filter((id) => id !== track.id)
+                      : [...current, track.id])}
+                  />
+                  {track.name}
+                </label>
+              ))}
+            </div>
+          )}
+
           <div className="song-ask">
             <input
               ref={inputRef}
               className="field song-prompt"
-              placeholder="a dark amapiano track at 112 with a sad piano"
+              placeholder={mode === 'remix'
+                ? 'what to build around it — "a house remix", "slow and dubby"'
+                : 'a dark amapiano track at 112 with a sad piano'}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void write() }}
               aria-label="Describe the song you want"
             />
-            <button className="btn primary" onClick={() => void write()} disabled={working}>
-              <Wand width={13} height={13} /> {working ? 'Writing…' : 'Write it'}
+            <button
+              className="btn primary" onClick={() => void write()}
+              disabled={working || (mode === 'remix' && keepTracks.length === 0)}
+            >
+              <Wand width={13} height={13} />
+              {working ? 'Writing…' : mode === 'remix' ? 'Remix it' : 'Write it'}
             </button>
           </div>
 

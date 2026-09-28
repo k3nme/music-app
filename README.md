@@ -132,6 +132,22 @@ and can explain every choice. Where a model would genuinely do better, the
 `MusicProvider` seam is where it plugs in: `'song'` is just another capability,
 and a remote one would return the same kind of suggestion.
 
+**Or remix what you already have.** Open it with audio on the timeline and it
+offers to build around that instead of replacing it. Three rules make that a
+remix rather than a song with something playing over the top:
+
+- **The record sets the tempo and the key**, not the prompt and not the project.
+  Stretching a recording to a tempo it was not played at is audible past about
+  15%, so the arrangement moves to the record rather than the other way round.
+- **Nothing is written over a job the record already does.** Keep a separated
+  vocal and no melody is written; keep the drums and no drums are. Keep a whole
+  record and it writes neither melody nor bass — a second melody is two records
+  at once, and two instruments holding different bottom notes is the one
+  overlap nothing survives — but new drums over a whole record is an ordinary
+  bootleg move, so those it will still write.
+- **The audio is kept exactly as it is.** Its clips are not moved, retimed or
+  re-gained.
+
 ### Make things move
 
 ![An automation lane](docs/screenshot-automation.png)

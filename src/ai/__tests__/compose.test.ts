@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { composeSong, planSections, planChords, castParts, describePlan, planSong } from '../compose'
+import {
+  castParts, composeSong, describePlan, planChords, planSections, planSong,
+  readRemixSource, remixProject,
+} from '../compose'
+import { DEFAULT_CHANNEL } from '../../audio/engine'
+import { emptyProject } from '../../music/project'
 import { readPrompt } from '../prompt'
 import { STYLES } from '../styles'
 import { ALL_PRESETS, getPreset, isDrumPreset, kitPieces } from '../../audio/instruments'
@@ -319,3 +324,147 @@ describe('the three takes it offers', () => {
     expect(project.tracks).toHaveLength(0)   // never mutates
   })
 })
+
+describe('remixing something that is already there', () => {
+  const audioClip = (over: Partial<Parameters<typeof readRemixSource>[0][number]> = {}) => ({
+    trackId: 'audio1', startBeat: 0, lengthBeats: 64,
+    analysis: { bpm: 92, root: 5, mode: 'minor' as const }, ...over,
+  })
+  const fallback = { bpm: 120, root: 0, scale: 'minor' as const }
+
+  it('takes the tempo and key from the record, not the project', () => {
+    const source = readRemixSource([audioClip()], fallback)!
+    expect(source.bpm).toBe(92)
+    expect(source.root).toBe(5)
+    expect(source.scale).toBe('minor')
+  })
+
+  it('falls back to the project when the audio was never analysed', () => {
+    const source = readRemixSource([audioClip({ analysis: null })], fallback)!
+    expect(source.bpm).toBe(120)
+    expect(source.reasons.join(' ')).toMatch(/no analysis/)
+  })
+
+  it('knows a vocal covers the melody and drums cover the drums', () => {
+    const source = readRemixSource([
+      audioClip({ stem: 'vocals' }), audioClip({ trackId: 'audio2', stem: 'drums' }),
+    ], fallback)!
+    expect([...source.covered].sort()).toEqual(['drums', 'lead'])
+  })
+
+  it('treats a full mix as covering the melody and the bass', () => {
+    // A second melody over a whole record is two records at once, and a second
+    // bass line is mud. New drums over one is an ordinary bootleg move.
+    const source = readRemixSource([audioClip()], fallback)!
+    expect([...source.covered].sort()).toEqual(['bass', 'lead'])
+    expect(source.covered.has('drums')).toBe(false)
+  })
+
+  it('says what the record brings in words a listener would use', () => {
+    const source = readRemixSource([audioClip({ stem: 'vocals' })], fallback)!
+    expect(source.reasons.join(' ')).toMatch(/melody/)
+    expect(source.reasons.join(' ')).not.toMatch(/\blead\b/)
+  })
+
+  it('has nothing to say about an empty timeline', () => {
+    expect(readRemixSource([], fallback)).toBeNull()
+  })
+
+  it('writes parts around the audio without writing over it', () => {
+    const project = {
+      ...emptyProjectWithAudio(),
+    }
+    const source = readRemixSource([
+      { trackId: 'audio1', startBeat: 0, lengthBeats: 64, stem: 'vocals',
+        analysis: { bpm: 92, root: 5, mode: 'minor' as const } },
+    ], fallback)!
+    const remixed = remixProject(project, readPrompt('house'), source, {
+      seed: 1, keep: ['audio1'], available: library,
+    })
+
+    // The record is still there, untouched.
+    expect(remixed.audioClips).toHaveLength(1)
+    expect(remixed.audioClips[0].trackId).toBe('audio1')
+    expect(remixed.tracks.some((t) => t.id === 'audio1')).toBe(true)
+    // At the record's tempo and key.
+    expect(remixed.bpm).toBe(92)
+    expect(remixed.key.root).toBe(5)
+    // With new parts around it, but no melody over the vocal.
+    const names = remixed.tracks.map((t) => t.name)
+    expect(names).toContain('Drums')
+    expect(names).toContain('Bass')
+    expect(names).not.toContain('Melody')
+  })
+
+  it('leaves out the drums when the record brings its own', () => {
+    const source = readRemixSource([
+      { trackId: 'audio1', startBeat: 0, lengthBeats: 32, stem: 'drums',
+        analysis: { bpm: 100, root: 0, mode: 'major' as const } },
+    ], fallback)!
+    const remixed = remixProject(emptyProjectWithAudio(), readPrompt('techno'), source, {
+      seed: 2, keep: ['audio1'], available: library,
+    })
+    expect(remixed.tracks.map((t) => t.name)).not.toContain('Drums')
+    // And no transitions track either — those are drum-kit pieces.
+    expect(remixed.tracks.some((t) => t.presetId === 'kit-fx')).toBe(false)
+  })
+
+  it('drops tracks the user did not keep, and their automation with them', () => {
+    const project = emptyProjectWithAudio()
+    project.automation = [
+      { id: 'a1', trackId: 'audio1', param: 'volume', points: [{ beat: 0, value: 1 }] },
+      { id: 'a2', trackId: 'gone', param: 'tone', points: [{ beat: 0, value: 500 }] },
+    ]
+    const source = readRemixSource([
+      { trackId: 'audio1', startBeat: 0, lengthBeats: 32, analysis: null },
+    ], fallback)!
+    const remixed = remixProject(project, readPrompt('house'), source, {
+      seed: 1, keep: ['audio1'], available: library,
+    })
+    expect(remixed.automation.map((l) => l.id)).toEqual(['a1'])
+    expect(remixed.tracks.some((t) => t.id === 'gone')).toBe(false)
+  })
+
+  it('runs the new parts for as long as the record does', () => {
+    const source = readRemixSource([
+      { trackId: 'audio1', startBeat: 0, lengthBeats: 128, stem: 'vocals',
+        analysis: { bpm: 120, root: 0, mode: 'minor' as const } },
+    ], fallback)!
+    const remixed = remixProject(emptyProjectWithAudio(), readPrompt('house'), source, {
+      seed: 1, keep: ['audio1'], available: library,
+    })
+    expect(remixed.lengthBeats).toBeGreaterThanOrEqual(128)
+    const written = remixed.clips.filter((c) => c.trackId !== 'audio1')
+    const end = Math.max(...written.map((c) => c.startBeat + c.lengthBeats))
+    expect(end).toBeGreaterThan(96)
+  })
+
+  it('never mutates the project it was given', () => {
+    const project = emptyProjectWithAudio()
+    const before = JSON.stringify(project)
+    const source = readRemixSource([
+      { trackId: 'audio1', startBeat: 0, lengthBeats: 32, analysis: null },
+    ], fallback)!
+    remixProject(project, readPrompt('house'), source, { seed: 1, keep: ['audio1'], available: library })
+    expect(JSON.stringify(project)).toBe(before)
+  })
+})
+
+/** A project with one audio track already on the timeline. */
+function emptyProjectWithAudio(): Project {
+  const project = emptyProject('has audio')
+  return {
+    ...project,
+    tracks: [{
+      id: 'audio1', name: 'Vocal', kind: 'audio', presetId: 'grand-piano',
+      channel: { ...DEFAULT_CHANNEL },
+      muted: false, soloed: false, isDrum: false, color: 200,
+    }],
+    audioClips: [{
+      id: 'ac1', trackId: 'audio1', sampleId: 's1', name: 'Vocal',
+      startBeat: 0, offsetSec: 0, sourceDurationSec: 30, gain: 1,
+      fadeInBeats: 0.02, fadeOutBeats: 0.02, warp: true, originalBpm: 92,
+      warpMode: 'stretch', pitchSemitones: 0, reverse: false,
+    }],
+  }
+}

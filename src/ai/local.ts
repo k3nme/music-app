@@ -18,7 +18,9 @@ import {
   chordNotes, diatonicChord, NOTE_NAMES, PROGRESSIONS, SCALES, snapToScale,
   type ChordQuality,
 } from '../music/theory'
-import { composeSong, describePlan, planSong } from './compose'
+import { composeSong, describePlan, planSong, readRemixSource, remixProject } from './compose'
+import { audioClipLengthBeats } from '../music/project'
+import { getSampleMeta } from '../lib/samples'
 import { describeBrief, readPrompt } from './prompt'
 import { STYLES, type Style } from './styles'
 import type { Capability, MusicalContext, MusicProvider, Suggestion } from './types'
@@ -398,6 +400,8 @@ function songSuggestions(context: MusicalContext): Suggestion[] {
     id: preset.id, family: preset.family as string, userMade: preset.userMade,
   }))
 
+  if (context.keep && context.keep.length > 0) return remixSuggestions(context, available, base)
+
   return [0, 1, 2].map((offset) => {
     // The brief is read at one seed and *rotated* by the take number, so the
     // three differ by construction. Letting each take re-read at its own seed
@@ -418,6 +422,62 @@ function songSuggestions(context: MusicalContext): Suggestion[] {
       // Keep the project's identity so this is an edit of the open document,
       // not a new file — which is what makes undo put the old one back.
       apply: (project: Project) => ({ ...song, id: project.id }),
+    }
+  })
+}
+
+/**
+ * Write around a record that is already on the timeline.
+ *
+ * The audio's own analysis — the tempo, key and tuning worked out when it was
+ * imported — decides the tempo and key, and which stems are being kept decides
+ * which parts get written at all.
+ */
+function remixSuggestions(
+  context: MusicalContext,
+  available: { id: string; family: string; userMade?: boolean }[],
+  base: number,
+): Suggestion[] {
+  const { project } = context
+  const keep = new Set(context.keep ?? [])
+  const clips = (project.audioClips ?? [])
+    .filter((clip) => keep.has(clip.trackId))
+    .map((clip) => {
+      const meta = getSampleMeta(clip.sampleId)
+      const analysis = meta?.analysis
+      return {
+        trackId: clip.trackId,
+        startBeat: clip.startBeat,
+        lengthBeats: audioClipLengthBeats(clip, project.bpm),
+        stem: meta?.stem,
+        analysis: analysis
+          ? { bpm: analysis.beat.bpm, root: analysis.key.root, mode: analysis.key.mode }
+          : null,
+      }
+    })
+
+  const source = readRemixSource(clips, {
+    bpm: project.bpm, root: project.key.root, scale: project.key.scale,
+  })
+  if (!source) return []
+
+  return [0, 1, 2].map((offset) => {
+    const seed = base + offset * 977
+    const brief = readPrompt(context.prompt ?? '', { seed: base, variation: offset })
+    // The record's tempo and key win, so the brief is only asked about style.
+    const remixBrief = { ...brief, bpm: source.bpm, root: source.root, scale: source.scale }
+    const plan = planSong(remixBrief, seed, available, offset)
+    const remixed = remixProject(project, brief, source, {
+      seed, keep: [...keep], available, variation: offset,
+    })
+    return {
+      id: uid('sug'),
+      capability: 'song' as Capability,
+      title: `${brief.style.name} remix ${offset + 1}`,
+      detail: `${describeBrief(remixBrief)} · ${describePlan(plan)}`,
+      reasons: [...source.reasons, ...brief.reasons.filter((r) => !/BPM|key of/.test(r))],
+      replacesProject: true,
+      apply: () => remixed,
     }
   })
 }

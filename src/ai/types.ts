@@ -41,6 +41,12 @@ export interface MusicalContext {
    * can assert on the output at all.
    */
   seed?: number
+  /**
+   * Track ids to build around rather than replace. With these, 'song' becomes
+   * a remix: the record on those tracks keeps its tempo, key and audio, and
+   * new parts are written around whatever jobs it does not already do.
+   */
+  keep?: string[]
 }
 
 export interface Suggestion {

@@ -69,12 +69,22 @@ const before = await page.evaluate(() => {
 
 // --- does it make a sound? -------------------------------------------------
 await page.locator('.song-take').first().locator('.btn', { hasText: 'Hear it' }).click()
-await page.waitForTimeout(1200)
-const heard = await page.evaluate(() => ({
-  state: window.__overtone.engine.ctx?.state,
-  level: window.__overtone.engine.level(),
-  playing: window.__overtone.useStore.getState().playing,
-}))
+// Sampled over a couple of seconds and peak-held, not read once. A song starts
+// with a quiet intro by design, so a single reading a fixed moment after
+// pressing play is a coin toss — it came back anywhere from 0.03 to 0.32
+// across runs, and would eventually land under any threshold worth setting.
+const heard = await page.evaluate(async () => {
+  let peak = 0
+  for (let i = 0; i < 40; i++) {
+    peak = Math.max(peak, window.__overtone.engine.level())
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return {
+    state: window.__overtone.engine.ctx?.state,
+    level: peak,
+    playing: window.__overtone.useStore.getState().playing,
+  }
+})
 record('Previewing plays it', heard.state === 'running' && heard.playing === true)
 record('And it is audible', heard.level > 0.001, `level ${heard.level.toFixed(4)}`)
 
@@ -213,6 +223,64 @@ const compared = await page.evaluate(async () => {
 record('Different words give a genuinely different song',
   compared.technoBpm === 140 && compared.lofiBpm < 100 && compared.technoKit !== compared.lofiKit,
   `${compared.technoKit} @${compared.technoBpm} vs ${compared.lofiKit} @${compared.lofiBpm}`)
+
+// --- remixing something already on the timeline ---------------------------
+// The other half of the feature: instead of replacing what is there, keep the
+// record and write around it.
+const remix = await page.evaluate(async () => {
+  const { useStore, localProvider } = window.__overtone
+  const { emptyProject, createTrack, createAudioClip } = await import('/src/music/project.ts')
+  const { rememberSample } = await import('/src/lib/samples.ts')
+
+  // A stand-in for an imported vocal: a sample with an analysis on it, as the
+  // importer leaves behind.
+  rememberSample({
+    id: 'remix-sample', name: 'A vocal', durationSec: 32, sampleRate: 44100, channels: 1,
+    byteSize: 1, mime: 'audio/wav', createdAt: Date.now(), stem: 'vocals',
+    analysis: {
+      beat: { bpm: 92, downbeatSec: 0, beatSec: 60 / 92, confidence: 0.9 },
+      key: { root: 5, mode: 'minor', confidence: 0.8, tuningCents: 0 },
+      peaks: new Float32Array(0), chords: [], durationSec: 32, loudnessDb: -12,
+    },
+  })
+
+  const project = emptyProject('remix me')
+  project.bpm = 120           // deliberately not the record's tempo
+  const track = createTrack({ name: 'A vocal', kind: 'audio', presetId: 'grand-piano' })
+  project.tracks = [track]
+  project.audioClips = [createAudioClip(track.id, 'remix-sample', {
+    name: 'A vocal', sourceDurationSec: 32, originalBpm: 92, warp: true,
+  })]
+  useStore.getState().setProject(project, { resetHistory: true })
+
+  const takes = await localProvider.suggest(
+    { project, prompt: 'a house remix', seed: 7, keep: [track.id] }, 'song',
+  )
+  const applied = takes[0].apply(project)
+  return {
+    takes: takes.length,
+    reasons: takes[0].reasons,
+    bpm: applied.bpm,
+    key: applied.key,
+    audioKept: applied.audioClips.length,
+    audioTrackKept: applied.tracks.some((t) => t.id === track.id),
+    parts: applied.tracks.filter((t) => t.id !== track.id).map((t) => t.name),
+    notes: applied.clips.reduce((sum, c) => sum + c.notes.length, 0),
+  }
+})
+record('Remixing keeps the audio that was there',
+  remix.audioKept === 1 && remix.audioTrackKept, `${remix.audioKept} clip kept`)
+record('And moves to the record\u2019s tempo and key rather than stretching it',
+  remix.bpm === 92 && remix.key.root === 5,
+  `${remix.bpm} BPM, root ${remix.key.root} (project was 120)`)
+record('It writes real parts around it',
+  remix.parts.length >= 2 && remix.notes > 40,
+  `${remix.parts.join(', ')} — ${remix.notes} notes`)
+record('But no melody over the vocal it is keeping',
+  !remix.parts.includes('Melody'), remix.parts.join(', '))
+record('And it says what it read off the record',
+  (remix.reasons ?? []).some((r) => /92 BPM/.test(r)),
+  (remix.reasons ?? []).join(' · '))
 
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 

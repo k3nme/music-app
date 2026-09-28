@@ -24,6 +24,7 @@ if (import.meta.env.DEV) {
     import('./audio/analysis/dissect'),
     import('./lib/instruments'),
     import('./ai'),
+    import('./ai/local'),
     import('./ai/prompt'),
     import('./ai/compose'),
     import('./music/automation'),

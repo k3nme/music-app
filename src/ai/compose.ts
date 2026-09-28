@@ -22,7 +22,9 @@ import {
   createClip, createNote, createTrack, emptyProject,
   type Clip, type Note, type Project, type Track,
 } from '../music/project'
-import { chordNotes, diatonicChord, NOTE_NAMES, SCALES, snapToScale } from '../music/theory'
+import {
+  chordNotes, diatonicChord, NOTE_NAMES, SCALES, snapToScale, type ScaleId,
+} from '../music/theory'
 import { mulberry, type PartName, type SongBrief } from './prompt'
 import type { PartRole, Style } from './styles'
 
@@ -425,11 +427,11 @@ export function composeSong(
 ): Project {
   const seed = options.seed ?? 1
   const plan = planSong(brief, seed, options.available, options.variation ?? 0)
-  const { sections, cast } = plan
-  const motif = makeMotif(seed, brief.energy)
-
   const base = emptyProject(options.name ?? songName(seed))
-  const project: Project = {
+  const written = writeParts(plan, seed)
+  const totalBars = plan.sections.reduce((sum, section) => sum + section.bars, 0)
+
+  return {
     ...base,
     bpm: brief.bpm,
     key: { root: brief.root, scale: brief.scale },
@@ -439,13 +441,31 @@ export function composeSong(
     // three-minute render, so a mix that measures fine over eight bars can
     // still be over unity by the last chorus. Both returns come down as well
     // as the fader.
-    master: {
-      ...base.master,
-      volume: 0.58,
-      reverbAmount: 0.55,
-      delayFeedback: 0.26,
-    },
+    master: { ...base.master, volume: 0.58, reverbAmount: 0.55, delayFeedback: 0.26 },
+    tracks: written.tracks,
+    clips: written.clips,
+    lengthBeats: totalBars * BEATS_PER_BAR,
+    updatedAt: Date.now(),
   }
+}
+
+/**
+ * Write every part of a plan as tracks and clips.
+ *
+ * One clip per section rather than one long clip, so the arrangement is
+ * editable afterwards: sections can be moved, muted or deleted as blocks,
+ * which is how anyone would actually work with it.
+ *
+ * Shared by writing from scratch and remixing, so a remix is the same
+ * composer with some of the parts already supplied by a record.
+ */
+function writeParts(
+  plan: SongPlan, seed: number, options: { skip?: Set<PartName>; startBar?: number } = {},
+): { tracks: Track[]; clips: Clip[] } {
+  const { brief, sections, cast } = plan
+  const motif = makeMotif(seed, brief.energy)
+  const skip = options.skip ?? new Set<PartName>()
+  const startBar = options.startBar ?? 0
 
   const tracks: Track[] = []
   const clips: Clip[] = []
@@ -453,7 +473,7 @@ export function composeSong(
 
   const wanted: PartName[] = ['drums', 'bass', 'chords', 'pad', 'lead']
   for (const part of wanted) {
-    if (brief.without.includes(part)) continue
+    if (brief.without.includes(part) || skip.has(part)) continue
     if (!sections.some((section) => section.parts.includes(part))) continue
 
     const presetId = cast[part === 'lead' ? 'lead' : part] ?? 'warm-pad'
@@ -471,15 +491,14 @@ export function composeSong(
       for (let bar = 0; bar < section.bars; bar++) {
         const absolute = section.startBar + bar
         const last = bar === section.bars - 1
-        const barNotes = writePart(part, plan, absolute, section.intensity, seed, motif, last)
-        for (const note of barNotes) {
+        for (const note of writePart(part, plan, absolute, section.intensity, seed, motif, last)) {
           notes.push({ ...note, start: note.start + bar * BEATS_PER_BAR })
         }
       }
       if (notes.length === 0) continue
       clips.push(createClip(track.id, {
         name: `${PART_LABELS[part]} · ${section.label}`,
-        startBeat: section.startBar * BEATS_PER_BAR,
+        startBeat: (startBar + section.startBar) * BEATS_PER_BAR,
         contentBeats: section.bars * BEATS_PER_BAR,
         lengthBeats: section.bars * BEATS_PER_BAR,
         notes,
@@ -489,7 +508,7 @@ export function composeSong(
 
   // Transitions: a riser into every drop, an impact on its downbeat. Only for
   // styles that use them — a jazz trio does not need a festival riser.
-  if (brief.style.transitions && !brief.without.includes('drums')) {
+  if (brief.style.transitions && !brief.without.includes('drums') && !skip.has('drums')) {
     const fx = createTrack({
       name: 'Transitions',
       presetId: 'kit-fx',
@@ -503,7 +522,6 @@ export function composeSong(
     const notes: { bar: number; note: Note }[] = []
     for (const section of sections) {
       if (section.kind !== 'drop' || section.startBar === 0) continue
-      // A two-bar riser ending exactly on the drop, and the impact that lands.
       notes.push({ bar: section.startBar - 2, note: createNote(37, 0, 0.25, 0.6) })
       notes.push({ bar: section.startBar, note: createNote(41, 0, 0.25, 0.7) })
     }
@@ -511,7 +529,7 @@ export function composeSong(
       tracks.push(fx)
       clips.push(createClip(fx.id, {
         name: 'Transitions',
-        startBeat: 0,
+        startBeat: startBar * BEATS_PER_BAR,
         contentBeats: totalBars * BEATS_PER_BAR,
         lengthBeats: totalBars * BEATS_PER_BAR,
         notes: notes.map(({ bar, note }) => ({ ...note, start: bar * BEATS_PER_BAR + note.start })),
@@ -519,14 +537,7 @@ export function composeSong(
     }
   }
 
-  return {
-    ...project,
-    tracks,
-    clips,
-    lengthBeats: totalBars * BEATS_PER_BAR,
-    loopEnd: Math.min(totalBars, 8) * BEATS_PER_BAR,
-    updatedAt: Date.now(),
-  } as Project
+  return { tracks, clips }
 }
 
 const PART_LABELS: Record<PartName, string> = {
@@ -583,4 +594,141 @@ export function describePlan(plan: SongPlan): string {
     return chord.quality.startsWith('min') ? `${name}m` : name
   })
   return `${names.join(' – ')} · ${sections.length} sections · ${SCALES[brief.scale].label}`
+}
+
+// ---------------------------------------------------------------------------
+// Remixing something that already exists
+// ---------------------------------------------------------------------------
+
+/** What the record being remixed brings with it. */
+export interface RemixSource {
+  /** The tempo of the audio being kept. */
+  bpm: number
+  root: number
+  scale: ScaleId
+  /** How long the kept audio runs, in beats at `bpm`. */
+  lengthBeats: number
+  /**
+   * Jobs the record already does. Writing a lead over a vocal, or a kick under
+   * a full drum loop, is the difference between a remix and a mess.
+   */
+  covered: Set<PartName>
+  /** What was read from the record, for showing back. */
+  reasons: string[]
+}
+
+/**
+ * Write new parts around audio that is already on the timeline.
+ *
+ * Three rules make this a remix rather than a song with something playing over
+ * it:
+ *
+ * - **The record sets the tempo and the key.** Not the prompt, and not the
+ *   project. Stretching a recording to a tempo it was not played at is audible
+ *   past about 15%, so the arrangement moves to the record rather than the
+ *   other way round.
+ * - **Nothing is written over a job the record already does.** Keep the vocal
+ *   and no lead is written; keep the drums and no drums are.
+ * - **The audio is kept exactly as it is.** Its clips are not moved, retimed or
+ *   re-gained. Whatever was there still plays.
+ */
+export function remixProject(
+  project: Project,
+  brief: SongBrief,
+  source: RemixSource,
+  options: { seed?: number; keep: string[]; available?: Parameters<typeof castParts>[2]; variation?: number } = { keep: [] },
+): Project {
+  const seed = options.seed ?? 1
+  const keep = new Set(options.keep)
+
+  const keptTracks = project.tracks.filter((track) => keep.has(track.id))
+  const keptClips = project.clips.filter((clip) => keep.has(clip.trackId))
+  const keptAudio = (project.audioClips ?? []).filter((clip) => keep.has(clip.trackId))
+
+  // The record's own key and tempo win; its length sets the arrangement's.
+  const remixBrief: SongBrief = {
+    ...brief,
+    bpm: source.bpm,
+    root: source.root,
+    scale: source.scale,
+    bars: Math.max(4, Math.round(source.lengthBeats / BEATS_PER_BAR)),
+    without: [...new Set([...brief.without, ...source.covered])],
+  }
+
+  const plan = planSong(remixBrief, seed, options.available, options.variation ?? 0)
+  const written = writeParts(plan, seed, { skip: source.covered })
+  const partBars = plan.sections.reduce((sum, section) => sum + section.bars, 0)
+
+  return {
+    ...project,
+    bpm: source.bpm,
+    key: { root: source.root, scale: source.scale },
+    tracks: [...keptTracks, ...written.tracks],
+    clips: [...keptClips, ...written.clips],
+    audioClips: keptAudio,
+    // Lanes belonging to tracks that are gone would be orphaned.
+    automation: (project.automation ?? []).filter((lane) => keep.has(lane.trackId)),
+    lengthBeats: Math.max(project.lengthBeats, source.lengthBeats, partBars * BEATS_PER_BAR),
+    master: { ...project.master, volume: Math.min(project.master.volume, 0.66) },
+    updatedAt: Date.now(),
+  }
+}
+
+/**
+ * Read what a set of kept tracks brings, from the analysis of their audio.
+ *
+ * Pure: the caller looks the analyses up (they live in the sample store) and
+ * hands them over, so this stays testable.
+ */
+/** What a listener would call the part, rather than what the code calls it. */
+function plainPart(part: PartName): string {
+  return part === 'lead' ? 'melody' : part
+}
+
+export function readRemixSource(
+  clips: {
+    trackId: string
+    startBeat: number
+    lengthBeats: number
+    /** 'vocals' | 'drums' | 'bass' | 'other', when the clip is a separated stem. */
+    stem?: string
+    analysis?: { bpm: number; root: number; mode: 'major' | 'minor' } | null
+  }[],
+  fallback: { bpm: number; root: number; scale: ScaleId },
+): RemixSource | null {
+  if (clips.length === 0) return null
+
+  const reasons: string[] = []
+  const analysed = clips.find((clip) => clip.analysis)
+  const bpm = analysed?.analysis ? Math.round(analysed.analysis.bpm) : fallback.bpm
+  const root = analysed?.analysis ? analysed.analysis.root : fallback.root
+  const scale: ScaleId = analysed?.analysis
+    ? (analysed.analysis.mode === 'minor' ? 'minor' : 'major')
+    : fallback.scale
+
+  reasons.push(analysed?.analysis
+    ? `the record runs at ${bpm} BPM in ${NOTE_NAMES[root]} ${scale === 'minor' ? 'minor' : 'major'}`
+    : `no analysis on the audio, so working at ${bpm} BPM`)
+
+  const covered = new Set<PartName>()
+  const stems = clips.map((clip) => clip.stem).filter(Boolean) as string[]
+  for (const stem of stems) {
+    if (stem === 'vocals') covered.add('lead')
+    if (stem === 'drums') covered.add('drums')
+    if (stem === 'bass') covered.add('bass')
+  }
+  if (stems.length === 0) {
+    // A full mix already has a tune and a bass line in it. A second melody is
+    // two records at once, and a second bass line is mud — two instruments
+    // holding different bottom notes is the one overlap nothing survives.
+    // New drums over a whole record, though, is an ordinary bootleg move.
+    covered.add('lead')
+    covered.add('bass')
+    reasons.push('keeping a whole record, so no melody or bass is written over it')
+  } else if (covered.size > 0) {
+    reasons.push(`the record already brings the ${[...covered].map(plainPart).join(' and ')}`)
+  }
+
+  const lengthBeats = Math.max(...clips.map((clip) => clip.startBeat + clip.lengthBeats))
+  return { bpm, root, scale, lengthBeats, covered, reasons }
 }

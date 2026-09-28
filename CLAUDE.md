@@ -109,6 +109,10 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **Peak-hold a level check, never read one instant.** A generated song opens
+  with a quiet intro, so `engine.level()` a fixed moment after pressing play
+  came back anywhere from 0.03 to 0.32 across runs. Sample over a second or two
+  and take the maximum.
 - **An intermittently failing browser test is usually a race in the app.** The
   Mashup Lab imported its decks concurrently and appended each one as its own
   analysis finished, so deck order — and with it the target tempo and key the
