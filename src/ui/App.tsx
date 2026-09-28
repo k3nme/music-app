@@ -20,13 +20,14 @@ import { IdeasButton, IdeasPanel } from './components/IdeasPanel'
 import { InstrumentPicker } from './components/InstrumentPicker'
 import { MashupLab } from './components/MashupLab'
 import { SoundLab } from './components/SoundLab'
+import { SongMaker } from './components/SongMaker'
 import { Keyboard } from './components/Keyboard'
 import { Mixer } from './components/Mixer'
 import { PianoRoll } from './components/PianoRoll'
 import { TopBar } from './components/TopBar'
 import { Note as NoteIcon, Piano, Sliders } from './icons'
 
-type Dialog = 'files' | 'export' | 'share' | 'ideas' | 'mashup' | 'sounds' | null
+type Dialog = 'files' | 'export' | 'share' | 'ideas' | 'mashup' | 'sounds' | 'song' | null
 
 export function App() {
   const project = useStore((s) => s.project)
@@ -94,6 +95,7 @@ export function App() {
     if (door === 'hum') useStore.getState().setUI({ humOpen: true })
     if (door === 'mashup') setDialog('mashup')
     if (door === 'sounds') setDialog('sounds')
+    if (door === 'song') setDialog('song')
     if (door === 'learn') useStore.getState().setUI({ learnOpen: true })
   }, [])
 
@@ -197,6 +199,9 @@ export function App() {
         case 'KeyG':
           if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'sounds' ? null : 'sounds')) }
           break
+        case 'KeyW':
+          if (letterShortcutsLive) { e.preventDefault(); setDialog((d) => (d === 'song' ? null : 'song')) }
+          break
         case 'KeyQ':
           if (letterShortcutsLive) {
             e.preventDefault()
@@ -276,6 +281,7 @@ export function App() {
         onShare={() => setDialog('share')}
         onMashup={() => setDialog('mashup')}
         onSounds={() => setDialog('sounds')}
+        onSong={() => setDialog('song')}
       />
 
       <div className="main">
@@ -360,6 +366,7 @@ export function App() {
       {dialog === 'ideas' && <IdeasPanel onClose={() => setDialog(null)} />}
       {dialog === 'mashup' && <MashupLab onClose={() => setDialog(null)} />}
       {dialog === 'sounds' && <SoundLab onClose={() => setDialog(null)} />}
+      {dialog === 'song' && <SongMaker onClose={() => setDialog(null)} />}
 
       {experience === 'guided' && (
         <NextStep

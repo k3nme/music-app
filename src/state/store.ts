@@ -10,10 +10,13 @@
 import { create } from 'zustand'
 import { engine, type ChannelSettings, type MasterSettings } from '../audio/engine'
 import { getPreset, isDrumPreset } from '../audio/instruments'
+import { clampParam, laneFor, normalisePoints } from '../music/automation'
 import {
   audioClipLengthBeats, clipsForTrack, collectAudio, collectNotes, contentEndBeat,
-  createAudioClip, createClip, createTrack, emptyProject, projectSampleIds,
-  type AudioClip, type Clip, type Note, type Project, type Track,
+  createAudioClip, createAutomationLane, createClip, createTrack, emptyProject,
+  projectSampleIds,
+  type AudioClip, type AutomatableParam, type AutomationPoint, type Clip, type Note,
+  type Project, type Track,
 } from '../music/project'
 import { installAudioBridge } from './audioBridge'
 import { getSampleMeta } from '../lib/samples'
@@ -48,7 +51,7 @@ export interface UIState {
    * A dialog a lesson asked for. App owns dialog state, so lessons post a
    * request here rather than reaching across into it.
    */
-  pendingDialog: 'mashup' | 'ideas' | 'demo-project' | 'sounds' | null
+  pendingDialog: 'mashup' | 'ideas' | 'demo-project' | 'sounds' | 'song' | null
   /**
    * 'guided' hides the parts of the studio that assume you already know a DAW.
    * It switches itself off once the user has made something.
@@ -79,6 +82,12 @@ interface Store extends UIState {
   updateTrack(trackId: string, patch: Partial<Track>): void
   setTrackPreset(trackId: string, presetId: string): void
   updateChannel(trackId: string, patch: Partial<ChannelSettings>): void
+
+  // --- automation ---
+  setLanePoints(trackId: string, param: AutomatableParam, points: AutomationPoint[]): void
+  addLanePoint(trackId: string, param: AutomatableParam, point: AutomationPoint): void
+  removeLanePoint(trackId: string, param: AutomatableParam, index: number): void
+  clearLane(trackId: string, param: AutomatableParam): void
   toggleMute(trackId: string): void
   toggleSolo(trackId: string): void
   moveTrack(trackId: string, delta: number): void
@@ -278,6 +287,48 @@ export const useStore = create<Store>((set, get) => ({
         ),
       }),
     }))
+  },
+
+  // --- automation ----------------------------------------------------------
+
+  /**
+   * Replace a lane's points. An empty list removes the lane entirely rather
+   * than leaving a dead one behind — an empty lane still claims the parameter
+   * from the mixer, and a knob that silently stopped working would be baffling.
+   */
+  setLanePoints(trackId, param, points) {
+    set((s) => {
+      const lanes = s.project.automation ?? []
+      const existing = lanes.find((l) => l.trackId === trackId && l.param === param)
+      const cleaned = normalisePoints(points).map((point) => ({
+        ...point, value: clampParam(param, point.value),
+      }))
+
+      let next: typeof lanes
+      if (cleaned.length === 0) {
+        next = lanes.filter((l) => l !== existing)
+      } else if (existing) {
+        next = lanes.map((l) => (l === existing ? { ...l, points: cleaned } : l))
+      } else {
+        next = [...lanes, createAutomationLane(trackId, param, cleaned)]
+      }
+      return { project: touch({ ...s.project, automation: next }) }
+    })
+  },
+
+  addLanePoint(trackId, param, point) {
+    const lane = laneFor(get().project, trackId, param)
+    get().setLanePoints(trackId, param, [...(lane?.points ?? []), point])
+  },
+
+  removeLanePoint(trackId, param, index) {
+    const lane = laneFor(get().project, trackId, param)
+    if (!lane) return
+    get().setLanePoints(trackId, param, lane.points.filter((_, i) => i !== index))
+  },
+
+  clearLane(trackId, param) {
+    get().setLanePoints(trackId, param, [])
   },
 
   toggleMute(trackId) {
@@ -609,6 +660,12 @@ export function syncEngine(project: Project, force = false) {
     if (!previous || previous.master.reverbSize !== project.master.reverbSize) {
       engine.setReverbSize(project.master.reverbSize)
     }
+  }
+
+  // Lanes before channels: `updateChannel` asks which parameters are spoken
+  // for, and a stale answer lets the mixer overwrite a curve.
+  if (force || !previous || previous.automation !== project.automation) {
+    engine.setAutomation(project.automation ?? [])
   }
 
   const soloed = project.tracks.some((t) => t.soloed)

@@ -4,9 +4,11 @@
  */
 
 import {
-  buildChannel, buildMaster, schedulePumpPoints, type MasterChain,
+  buildChannel, buildMaster, paramTarget, scheduleAutomation, schedulePumpPoints,
+  type MasterChain,
 } from '../audio/engine'
 import { pumpPoints } from '../audio/pump'
+import { automatedParams, segmentsIn } from '../music/automation'
 import { createInstrument, getPreset, initPluck } from '../audio/instruments'
 import {
   audibleTrackIds, audioClipLengthBeats, audioClipSpeed, contentEndBeat, type Project,
@@ -54,11 +56,31 @@ export async function renderProject(project: Project, options: RenderOptions = {
   const audible = audibleTrackIds(project)
   const soloed = project.tracks.some((t) => t.soloed)
 
+  // Declared here because the automation scheduled while channels are built
+  // reads it — a `const` below would be in its temporal dead zone.
+  const lead = 0.02
+
   const instruments = new Map<string, ReturnType<typeof createInstrument>>()
   const channels = new Map<string, ReturnType<typeof buildChannel>>()
   for (const track of project.tracks) {
     const muted = track.muted || (soloed && !track.soloed)
+    // A parameter under automation must not be set statically first: the
+    // static value would be the one in force until the lane's first point,
+    // which for a lane starting mid-song is the whole opening.
+    const automated = automatedParams(project, track.id)
     const channel = buildChannel(ctx, master, { ...track.channel, muted })
+    for (const param of automated) {
+      const target = paramTarget(channel, param)
+      const lane = (project.automation ?? []).find(
+        (l) => l.trackId === track.id && l.param === param,
+      )
+      if (!target || !lane) continue
+      scheduleAutomation(
+        target,
+        segmentsIn(lane, startBeat, endBeat),
+        (beat) => Math.max(0, (beat - startBeat) * beatSec + lead),
+      )
+    }
     channels.set(track.id, channel)
     if (track.kind === 'audio') continue
     const instrument = createInstrument(ctx, getPreset(track.presetId))
@@ -68,7 +90,6 @@ export async function renderProject(project: Project, options: RenderOptions = {
   }
 
   // Schedule every note in one pass — offline rendering has no lookahead limit.
-  const lead = 0.02
 
   // The sidechain duck is part of the mix, not a live-only effect: a bounce
   // without it is a different record.

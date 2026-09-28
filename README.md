@@ -27,7 +27,7 @@ npm run dev        # http://localhost:5173
 
 ![The first run](docs/screenshot-firstrun.png)
 
-Five doors, phrased as things you might want to do rather than DAW features.
+Six doors, phrased as things you might want to do rather than DAW features.
 Two of them need no music knowledge at all. New users land in a simplified
 view that hides the key and scale controls and suggests a next step based on
 what the project actually contains; one click leaves it for good.
@@ -92,6 +92,41 @@ the timeline, where each part is baked at the target tempo.
 
 ![The Mashup Lab](docs/screenshot-mashup.png)
 
+**It tells you whether two records go together.** Tempo distance — allowing for
+half and double time, because a 70 BPM record under a 140 BPM one is not a tempo
+problem but how half of all mashups work — key relationship including the
+relative major/minor and distance round the circle of fifths, and how confident
+the key detection was. The verdict is one word (*great*, *workable*, *a
+stretch*) with the reasoning in plain sentences underneath, and it will also
+choose which stems come from which deck: the quieter record gives up its vocal,
+the louder one keeps the groove.
+
+The score is **multiplied**, not added, so a perfect key can't rescue a tempo
+that cannot be matched. A mashup out of time is not a mashup, however well the
+keys get on.
+
+**Or lay them end to end as a DJ set.** The other thing to do with several
+records: one after another on a beatmatched grid, overlapping just enough to
+get from one to the next. It orders them so each goes with the one after it
+(greedy nearest-neighbour on the compatibility score — not the optimal
+ordering, which is a travelling-salesman problem, but the decision a DJ
+actually makes, one record at a time), warps everything to a single tempo, and
+**writes each transition as automation**: the outgoing record fades and closes
+its filter while the incoming one opens up.
+
+The crossfade is **equal power**, not equal gain. Two uncorrelated records
+fading past each other on straight lines are each at half level in the middle,
+which sums about 3 dB down — an audible hole exactly where the mix is supposed
+to be seamless. They meet at 0.707 instead.
+
+No record is given a longer turn than it has music for, which sounds obvious
+and was not: asking a 10-bar edit to fill a 48-bar slot leaves 38 bars of
+silence, and because the next record comes in relative to where this one
+*ends*, the hole lands precisely on the blend.
+
+This is what automation was built for. Before it, a transition could not be
+expressed at all.
+
 The cross-language part isn't a feature so much as a consequence: separation and
 matching work on the spectrogram and the beat grid, never on words, so a Tamil
 vocal behaves exactly like an English one. Where it *does* show up is **tuning**.
@@ -99,6 +134,82 @@ Plenty of recordings — older film music, a lot of Indian and Arabic repertoire
 anything cut to tape — sit tens of cents off A440. Overtone measures each track's
 actual tuning reference and folds the correction into the transposition, so a
 song cut 30 cents flat lands in tune rather than between two semitones.
+
+### Ask for a song and get one
+
+![Writing a song from a prompt](docs/screenshot-songmaker.png)
+
+Type what you want — *"a dark amapiano track at 112 with a sad piano"*, *"chilled
+lo-fi to study to, no lead"*, *"hard techno, 140, industrial"* — and a whole
+arrangement gets written: drums, bass, chords, pad, melody, transitions, a rough
+mix with the sidechain set up, and a structure that goes somewhere.
+
+It reads the prompt for a genre, a tempo, a key, a mood, named instruments, what
+to leave out and how long it should be, then shows you **what it understood**
+before it plays anything. That last part matters more than the music: a guess
+you cannot see or change is worse than no guess.
+
+Then it composes. A progression from the style, a bass line that follows it, a
+chord part voiced to stay in one register, a **melody built from one phrase and
+its variations** — because what makes a tune a tune rather than a run of in-key
+notes is that it repeats itself — a drum pattern thinned out in quiet sections,
+and an arrangement where parts enter and drop out. Dance styles get intro →
+build → drop → breakdown → build → drop → outro with a riser into each drop;
+everything else gets verses and choruses.
+
+You get **three versions** of the same brief, each auditionable before you keep
+one, and "three more versions" for another go. Keeping one replaces the
+timeline, and one undo puts back whatever was there.
+
+It is not a model and does not pretend to be. It is the same music theory the
+Learn module teaches, applied by rule — which is why it runs instantly, offline,
+and can explain every choice. Where a model would genuinely do better, the
+`MusicProvider` seam is where it plugs in: `'song'` is just another capability,
+and a remote one would return the same kind of suggestion.
+
+**Or remix what you already have.** Open it with audio on the timeline and it
+offers to build around that instead of replacing it. Three rules make that a
+remix rather than a song with something playing over the top:
+
+- **The record sets the tempo and the key**, not the prompt and not the project.
+  Stretching a recording to a tempo it was not played at is audible past about
+  15%, so the arrangement moves to the record rather than the other way round.
+- **Nothing is written over a job the record already does.** Keep a separated
+  vocal and no melody is written; keep the drums and no drums are. Keep a whole
+  record and it writes neither melody nor bass — a second melody is two records
+  at once, and two instruments holding different bottom notes is the one
+  overlap nothing survives — but new drums over a whole record is an ordinary
+  bootleg move, so those it will still write.
+- **The audio is kept exactly as it is.** Its clips are not moved, retimed or
+  re-gained.
+
+### Make things move
+
+![An automation lane](docs/screenshot-automation.png)
+
+Every mixer control can be made to **change over time**. Press **A** on a track
+and a lane opens under it: click to add points, drag them, double-click one to
+make it step instead of slide. Volume, pan, filter, reverb, delay and drive.
+
+The filter is the one worth knowing about. It is drawn and interpolated
+**logarithmically**, because that is how frequency is heard — a linear sweep
+from 20 kHz to 100 Hz spends almost all its time in the top octave where
+nothing is happening and then falls off a cliff. Drawn this way, a sweep is a
+straight line and behaves like one.
+
+There are ready-made shapes for the moves people actually want — filter opens,
+filter closes, fade in, fade out, drop out and return, reverb wash — drawn
+across the loop region, because "here" almost always means the part you are
+looping.
+
+A lane holds its first value before its first point and its last value after
+its last, so a curve drawn over bars 17-24 leaves the opening alone. An
+automated parameter is also *owned* by its lane: the mixer knob stops writing
+to it, rather than the two fighting over the same value every time React
+re-renders.
+
+Curves play live and are reproduced exactly in the offline render, because both
+read the same pure functions.
 
 ### Take a song apart, and keep what is in it
 
@@ -207,6 +318,7 @@ src/
       analysis.worker.ts pitch analysis off the main thread
     workers/dsp.worker.ts  analysis, separation and warping off the main thread
   music/
+    automation.ts        values that change over time (pure, so it is tested)
     theory.ts            scales (incl. ragas and maqam), chords, progressions
     key.ts               key detection from a melody
     matching.ts          tempo/key/tuning matching between recordings
@@ -316,6 +428,8 @@ node scripts/audio-e2e.mjs    # imports a song, warps it, separates it, bundles 
 node scripts/mashup-e2e.mjs   # mashes two songs of different tempo, key and tuning
 node scripts/learn-e2e.mjs    # the first-run doors, the lessons and the glossary
 node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
+node scripts/song-e2e.mjs     # write a song from a prompt, play it, keep it, undo
+node scripts/automation-e2e.mjs  # draw a curve, hear it move, render it, undo it
 ```
 
 The unit tests cover the parts where being wrong is silent: pitch detection
@@ -331,6 +445,13 @@ A–C–E–D comes back as exactly those notes on a sitar, and that a strummed
 Am–F–C–G comes back as those four chords in order. `audio-e2e.mjs` builds a
 song in-page, imports it as a dropped file and checks tempo, key, tuning,
 warping in both directions, offline render, separation and bundling.
+`song-e2e.mjs` writes a song from a prompt through the UI, plays it, keeps it,
+renders it, and checks three things the unit tests cannot: that it is audible,
+that it *rises and falls* rather than being one loop repeated, and that no style
+clips — measured both at the loudest moment and across a whole render, because
+the shared reverb and delay accumulate over three minutes and a mix that
+measures fine over eight bars can still be over by the last chorus.
+
 `sounds-e2e.mjs` builds a song, takes it apart through the UI, keeps the
 result, renders it to check it makes a sound across its whole range, **reloads
 the page** and renders again — an instrument that does not survive a reload is
@@ -363,6 +484,14 @@ arrangement canvas.
   double-tracked vocal, a mono recording, or a dense wall-of-sound mix will all
   defeat it, and you will hear bleed between parts on anything. It is good
   enough to build a mashup on; it is not a studio multitrack.
+- **The songwriter writes competently, not creatively.** It knows what a style
+  is made of and puts that together correctly — in key, in range, in time, with
+  a shape. It has no taste, no surprise and no idea what any of it is *about*.
+  It is a good first draft and a very good way to stop staring at an empty
+  timeline; it is not a producer.
+- **It only knows the styles it has profiles for.** Twelve of them. Ask for
+  something outside that list and it picks the nearest thing it has and tells
+  you so, rather than pretending.
 - **Sounds pulled out of a song carry their surroundings.** Extraction starts
   from stem separation, so it inherits every limit below — a kick lifted out of
   a dense mix has some bass under it, and a "voice" from a track with no vocal

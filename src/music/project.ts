@@ -9,7 +9,7 @@ import { DEFAULT_CHANNEL, DEFAULT_MASTER, type ChannelSettings, type MasterSetti
 import { uid } from '../lib/id'
 import type { ScaleId } from './theory'
 
-export const PROJECT_VERSION = 1
+export const PROJECT_VERSION = 2
 
 export interface Note {
   id: string
@@ -86,6 +86,28 @@ export interface Track {
   color: number
 }
 
+/** Channel settings that can be made to move over time. */
+export type AutomatableParam = 'volume' | 'pan' | 'tone' | 'reverbSend' | 'delaySend' | 'drive'
+
+export interface AutomationPoint {
+  /** Position on the arrangement timeline, in beats. */
+  beat: number
+  value: number
+  /**
+   * Step to this value instead of sliding to it. A filter that snaps shut on
+   * the beat is a different move from one that closes over four bars.
+   */
+  hold?: boolean
+}
+
+/** One parameter of one track, moving over time. */
+export interface AutomationLane {
+  id: string
+  trackId: string
+  param: AutomatableParam
+  points: AutomationPoint[]
+}
+
 export interface ProjectKey {
   root: number // pitch class 0-11
   scale: ScaleId
@@ -101,6 +123,8 @@ export interface Project {
   tracks: Track[]
   clips: Clip[]
   audioClips: AudioClip[]
+  /** Parameters that move. Absent on projects saved before automation existed. */
+  automation: AutomationLane[]
   master: MasterSettings
   /** Arrangement length in beats. */
   lengthBeats: number
@@ -145,6 +169,12 @@ export function createClip(trackId: string, partial: Partial<Clip> = {}): Clip {
   }
 }
 
+export function createAutomationLane(
+  trackId: string, param: AutomatableParam, points: AutomationPoint[] = [],
+): AutomationLane {
+  return { id: uid('auto'), trackId, param, points }
+}
+
 export function createAudioClip(
   trackId: string, sampleId: string, partial: Partial<AudioClip> = {},
 ): AudioClip {
@@ -180,6 +210,7 @@ export function emptyProject(name = 'Untitled'): Project {
     tracks: [],
     clips: [],
     audioClips: [],
+    automation: [],
     master: { ...DEFAULT_MASTER },
     lengthBeats: 64,
     createdAt: now,

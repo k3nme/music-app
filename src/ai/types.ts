@@ -25,12 +25,28 @@ export type Capability =
   | 'harmony'
   /** Structural moves: double a part, add a counter-melody, build an intro. */
   | 'arrangement'
+  /** A whole song, written from a plain-language prompt. */
+  | 'song'
 
 export interface MusicalContext {
   project: Project
   /** What the user is looking at, when it's relevant. */
   trackId?: string | null
   clipId?: string | null
+  /** What the user asked for, in their own words. Used by 'song'. */
+  prompt?: string
+  /**
+   * Makes generation repeatable. The same prompt and seed give the same song,
+   * so "another version" is a new seed rather than a coin toss — and a test
+   * can assert on the output at all.
+   */
+  seed?: number
+  /**
+   * Track ids to build around rather than replace. With these, 'song' becomes
+   * a remix: the record on those tracks keeps its tempo, key and audio, and
+   * new parts are written around whatever jobs it does not already do.
+   */
+  keep?: string[]
 }
 
 export interface Suggestion {
@@ -40,6 +56,17 @@ export interface Suggestion {
   title: string
   /** One line on what it does and why it fits. */
   detail: string
+  /**
+   * Why it chose this, in plain sentences. A guess you cannot see is worse
+   * than no guess, so anything that makes a decision on the user's behalf
+   * shows its working.
+   */
+  reasons?: string[]
+  /**
+   * True when applying this replaces the arrangement rather than adding to it.
+   * The UI warns before doing that; undo still puts it back.
+   */
+  replacesProject?: boolean
   /** Returns a new project with the suggestion applied. Never mutates. */
   apply(project: Project): Project
 }

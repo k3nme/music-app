@@ -342,6 +342,7 @@ function TryButton({ action, onClose }: { action: TryAction; onClose(): void }) 
     'open-hum': 'Open Hum it',
     'open-mashup': 'Open the Mashup Lab',
     'open-sounds': 'Take a song apart',
+    'open-song': 'Write me a song',
     'open-ideas': 'Open Ideas',
     'open-instruments': 'Browse instruments',
     'load-demo-project': 'Load the starter groove',
@@ -355,6 +356,7 @@ function TryButton({ action, onClose }: { action: TryAction; onClose(): void }) 
       case 'open-instruments': store.setUI({ instrumentPickerFor: 'new' }); break
       case 'open-mashup': store.setUI({ pendingDialog: 'mashup' }); break
       case 'open-sounds': store.setUI({ pendingDialog: 'sounds' }); break
+      case 'open-song': store.setUI({ pendingDialog: 'song' }); break
       case 'open-ideas': store.setUI({ pendingDialog: 'ideas' }); break
       case 'load-demo-project': store.setUI({ pendingDialog: 'demo-project' }); break
     }

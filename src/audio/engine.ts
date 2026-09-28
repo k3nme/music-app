@@ -13,6 +13,8 @@ import { createInstrument, getPreset, initPluck } from './instruments'
 import type { InstrumentInstance, NoteHandle, PresetBase } from './types'
 import { clamp } from './types'
 import { pumpPoints, type PumpPoint } from './pump'
+import type { AutomatableParam, AutomationLane } from '../music/project'
+import { segmentsIn } from '../music/automation'
 
 export interface QueuedNote {
   trackId: string
@@ -226,19 +228,73 @@ export function buildChannel(ctx: BaseAudioContext, master: MasterChain, setting
   return { input, driveShaper, driveWet, driveDry, tone, panner, fader, pump, reverbSend, delaySend, analyser, settings }
 }
 
-export function applyChannelSettings(ch: Channel, s: ChannelSettings, when: number) {
+/**
+ * Push the channel strip's static settings onto its nodes.
+ *
+ * `automated` names parameters a lane is driving. Those are skipped: the mixer
+ * knob and the automation lane would otherwise fight over the same AudioParam
+ * every time the store changed, and the knob — which writes on every React
+ * update — would win, so the curve would stutter or disappear entirely.
+ *
+ * Muting still applies over the top of an automated volume, because a mute
+ * that a lane could override would not be a mute.
+ */
+export function applyChannelSettings(
+  ch: Channel, s: ChannelSettings, when: number, automated?: ReadonlySet<AutomatableParam>,
+) {
   const ramp = 0.02
-  ch.fader.gain.setTargetAtTime(s.muted ? 0 : s.volume, when, ramp)
-  ch.panner.pan.setTargetAtTime(s.pan, when, ramp)
-  ch.reverbSend.gain.setTargetAtTime(s.reverbSend, when, ramp)
-  ch.delaySend.gain.setTargetAtTime(s.delaySend, when, ramp)
-  ch.tone.frequency.setTargetAtTime(clamp(s.tone, 60, 20000), when, ramp)
-  if (Math.abs(s.drive - ch.settings.drive) > 0.001) {
-    ch.driveShaper.curve = driveCurve(Math.max(0.001, s.drive))
+  const free = (param: AutomatableParam) => !automated?.has(param)
+
+  if (s.muted) ch.fader.gain.setTargetAtTime(0, when, ramp)
+  else if (free('volume')) ch.fader.gain.setTargetAtTime(s.volume, when, ramp)
+
+  if (free('pan')) ch.panner.pan.setTargetAtTime(s.pan, when, ramp)
+  if (free('reverbSend')) ch.reverbSend.gain.setTargetAtTime(s.reverbSend, when, ramp)
+  if (free('delaySend')) ch.delaySend.gain.setTargetAtTime(s.delaySend, when, ramp)
+  if (free('tone')) ch.tone.frequency.setTargetAtTime(clamp(s.tone, 60, 20000), when, ramp)
+  if (free('drive')) {
+    if (Math.abs(s.drive - ch.settings.drive) > 0.001) {
+      ch.driveShaper.curve = driveCurve(Math.max(0.001, s.drive))
+    }
+    ch.driveWet.gain.setTargetAtTime(s.drive, when, ramp)
+    ch.driveDry.gain.setTargetAtTime(1 - s.drive * 0.7, when, ramp)
   }
-  ch.driveWet.gain.setTargetAtTime(s.drive, when, ramp)
-  ch.driveDry.gain.setTargetAtTime(1 - s.drive * 0.7, when, ramp)
   ch.settings = { ...s }
+}
+
+/** The AudioParam a lane drives, and how to write a value to it. */
+export function paramTarget(ch: Channel, param: AutomatableParam): AudioParam | null {
+  switch (param) {
+    case 'volume': return ch.fader.gain
+    case 'pan': return ch.panner.pan
+    case 'tone': return ch.tone.frequency
+    case 'reverbSend': return ch.reverbSend.gain
+    case 'delaySend': return ch.delaySend.gain
+    // Drive is a blend between two paths plus a curve swap, so it has no single
+    // param to ramp. The wet gain is the audible part of it.
+    case 'drive': return ch.driveWet.gain
+    default: return null
+  }
+}
+
+/**
+ * Write a lane's breakpoints onto a param. Shared by the live scheduler, the
+ * offline renderer and the preview, so all three agree about what a curve is.
+ */
+export function scheduleAutomation(
+  param: AudioParam,
+  segments: { beat: number; value: number; hold: boolean }[],
+  timeAt: (beat: number) => number,
+  notBefore = 0,
+) {
+  segments.forEach((segment, index) => {
+    const time = Math.max(notBefore, timeAt(segment.beat))
+    if (index === 0 || segment.hold) {
+      param.setValueAtTime(segment.value, time)
+    } else {
+      param.linearRampToValueAtTime(segment.value, time)
+    }
+  })
 }
 
 /**
@@ -349,6 +405,10 @@ export class AudioEngine {
   private startedAudio = new Set<string>()
   /** Last pump cycle scheduled per track, in timeline beats. */
   private pumpUntil = new Map<string, number>()
+  /** Automation lanes, mirrored from the project by `syncEngine`. */
+  private lanes: AutomationLane[] = []
+  /** How far each lane has been scheduled, in timeline beats. */
+  private laneUntil = new Map<string, number>()
 
   bpm = 120
   loopEnabled = true
@@ -442,8 +502,17 @@ export class AudioEngine {
     if (!ch || !this.ctx) return
     const pumpChanged = ch.settings.pump !== settings.pump
       || ch.settings.pumpBeats !== settings.pumpBeats
-    applyChannelSettings(ch, settings, this.ctx.currentTime)
+    applyChannelSettings(ch, settings, this.ctx.currentTime, this.automatedOn(trackId))
     if (pumpChanged) this.resetPump(trackId, ch)
+  }
+
+  /** Parameters a lane is driving on this track, which the mixer must not touch. */
+  private automatedOn(trackId: string): Set<AutomatableParam> {
+    const out = new Set<AutomatableParam>()
+    for (const lane of this.lanes) {
+      if (lane.trackId === trackId && lane.points.length > 0) out.add(lane.param)
+    }
+    return out
   }
 
   /** Drop the scheduled duck and lift the channel back to unity. The next tick
@@ -467,6 +536,9 @@ export class AudioEngine {
     if (ch) disposeChannel(ch)
     this.channels.delete(trackId)
     this.pumpUntil.delete(trackId)
+    for (const lane of this.lanes) {
+      if (lane.trackId === trackId) this.laneUntil.delete(lane.id)
+    }
   }
 
   getChannel(trackId: string): Channel | undefined {
@@ -551,6 +623,7 @@ export class AudioEngine {
     this.cursorBeat = start
     this.lastMetronomeBeat = Math.floor(start) - 1
     this.startedAudio.clear()
+    this.laneUntil.clear()
     for (const [id, ch] of this.channels) this.resetPump(id, ch)
     this.playing = true
     this.ticker.start(TICK_MS)
@@ -687,6 +760,7 @@ export class AudioEngine {
 
       this.scheduleAudio(songStart, songEnd, offset, now)
       this.schedulePumps(songStart, songEnd, offset, now)
+      this.scheduleAutomation(songStart, songEnd, offset, now)
 
       if (this.metronome) this.scheduleMetronome(songStart, songEnd, offset)
       this.cursorBeat = chunkEnd
@@ -793,6 +867,62 @@ export class AudioEngine {
         if (point.kind === 'set') ch.pump.gain.setValueAtTime(point.value, time)
         else ch.pump.gain.linearRampToValueAtTime(point.value, time)
       }
+    }
+  }
+
+  /**
+   * Replace the automation lanes. Called by `syncEngine` on every change, like
+   * everything else musical: the store owns them, the engine mirrors them.
+   */
+  setAutomation(lanes: AutomationLane[]) {
+    this.lanes = lanes
+    this.laneUntil.clear()
+    if (!this.ctx) return
+    // Re-seat every automated parameter at its value for the current position,
+    // so an edit is audible immediately rather than at the next window.
+    const beat = this.positionBeats
+    const t = this.ctx.currentTime
+    for (const lane of lanes) {
+      const channel = this.channels.get(lane.trackId)
+      const target = channel && paramTarget(channel, lane.param)
+      if (!target) continue
+      const [now] = segmentsIn(lane, beat, beat)
+      if (!now) continue
+      try {
+        target.cancelScheduledValues(t)
+        target.setValueAtTime(now.value, t)
+      } catch { /* nothing scheduled yet */ }
+    }
+  }
+
+  /**
+   * Write each lane across the lookahead window.
+   *
+   * Same shape as the pump: the transport walks a window ahead of the clock,
+   * and everything that moves gets written into it once.
+   */
+  private scheduleAutomation(fromBeat: number, toBeat: number, offset: number, now: number) {
+    if (this.lanes.length === 0) return
+    for (const lane of this.lanes) {
+      if (lane.points.length === 0) continue
+      const channel = this.channels.get(lane.trackId)
+      if (!channel) continue
+      const target = paramTarget(channel, lane.param)
+      if (!target) continue
+
+      const last = this.laneUntil.get(lane.id) ?? -Infinity
+      const segments = segmentsIn(lane, fromBeat, toBeat)
+      if (segments.length === 0) continue
+
+      scheduleAutomation(
+        target,
+        // The leading segment says where the ramp already is; after the first
+        // window it would only re-state what is already scheduled.
+        segments.filter((segment, index) => index === 0 || segment.beat + offset > last),
+        (beat) => this.timeAt(beat + offset),
+        now,
+      )
+      this.laneUntil.set(lane.id, toBeat + offset)
     }
   }
 

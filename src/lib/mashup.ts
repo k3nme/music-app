@@ -20,6 +20,16 @@ export type StemSelection = 'full' | StemName[]
 
 export interface Deck {
   id: string
+  /**
+   * The order this deck was *added* in, not the order its analysis finished.
+   *
+   * Songs are analysed concurrently and take different amounts of time, so
+   * appending each one as it resolves makes the deck order — and with it the
+   * target tempo and key, which the first deck sets — depend on which file
+   * happened to be quicker. Dropping the same two songs twice gave two
+   * different mashups.
+   */
+  seq: number
   meta: SampleMeta
   analysis: AudioAnalysis
   channels: Float32Array[]

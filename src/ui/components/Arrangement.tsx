@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { engine } from '../../audio/engine'
 import { getPreset } from '../../audio/instruments'
 import {
@@ -9,6 +9,9 @@ import { getSampleMeta, samplePeaks } from '../../lib/samples'
 import { importAudioIntoProject, looksLikeAudio } from '../../lib/importAudio'
 import { Waveform } from './Waveform'
 import { useStore } from '../../state/store'
+import { AutomationHead, AutomationLaneView } from './AutomationLane'
+import { automatedParams } from '../../music/automation'
+import type { AutomatableParam } from '../../music/project'
 import { useLevel, usePlayhead } from '../hooks'
 import { Copy, Plus, Trash } from '../icons'
 import { Term } from './Term'
@@ -26,6 +29,8 @@ export function Arrangement() {
   const grid = useStore((s) => s.grid)
 
   const [ppb, setPpb] = useState(18)
+  /** Which parameter each track has an automation lane open for. */
+  const [openAuto, setOpenAuto] = useState<Record<string, AutomatableParam>>({})
   const [dropping, setDropping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -84,7 +89,34 @@ export function Arrangement() {
           }}
         >
           {project.tracks.map((track) => (
-            <TrackHead key={track.id} track={track} selected={track.id === selectedTrackId} playing={playing} />
+            <Fragment key={track.id}>
+              <TrackHead
+                track={track}
+                selected={track.id === selectedTrackId}
+                playing={playing}
+                automating={Boolean(openAuto[track.id])}
+                onToggleAutomation={() => setOpenAuto((current) => {
+                  if (current[track.id]) {
+                    const { [track.id]: _gone, ...rest } = current
+                    return rest
+                  }
+                  // Open on something the track already automates, if it does.
+                  const [existing] = automatedParams(project, track.id)
+                  return { ...current, [track.id]: existing ?? 'volume' }
+                })}
+              />
+              {openAuto[track.id] && (
+                <AutomationHead
+                  track={track}
+                  param={openAuto[track.id]}
+                  onParam={(next) => setOpenAuto((c) => ({ ...c, [track.id]: next }))}
+                  onClose={() => setOpenAuto((c) => {
+                    const { [track.id]: _gone, ...rest } = c
+                    return rest
+                  })}
+                />
+              )}
+            </Fragment>
           ))}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>
             <button
@@ -164,8 +196,8 @@ export function Arrangement() {
           />
 
           {project.tracks.map((track) => (
+            <Fragment key={track.id}>
             <Lane
-              key={track.id}
               track={track}
               clips={clipsForTrack(project, track.id)}
               audioClips={audioClipsForTrack(project, track.id)}
@@ -177,6 +209,16 @@ export function Arrangement() {
               snapBeat={snapBeat}
               beatAtClientX={beatAtClientX}
             />
+            {openAuto[track.id] && (
+              <AutomationLaneView
+                track={track}
+                param={openAuto[track.id]}
+                ppb={ppb}
+                width={width}
+                snapBeat={snapBeat}
+              />
+            )}
+            </Fragment>
           ))}
 
           {project.tracks.length === 0 && (
@@ -252,7 +294,10 @@ function Ruler({ bars, beatsPerBar, ppb, onSeek }: {
 
 // ---------------------------------------------------------------------------
 
-function TrackHead({ track, selected, playing }: { track: Track; selected: boolean; playing: boolean }) {
+function TrackHead({ track, selected, playing, automating, onToggleAutomation }: {
+  track: Track; selected: boolean; playing: boolean
+  automating: boolean; onToggleAutomation(): void
+}) {
   const { select, updateTrack, toggleMute, toggleSolo, setUI, removeTrack } = useStore.getState()
   const level = useLevel(track.id, playing)
   const preset = getPreset(track.presetId)
@@ -293,6 +338,11 @@ function TrackHead({ track, selected, playing }: { track: Track; selected: boole
           </button>
         )}
         <div className="spacer" />
+        <button
+          className={`mini ${automating ? 'on' : ''}`}
+          onClick={(e) => { e.stopPropagation(); onToggleAutomation() }}
+          title="Automation — make a knob move over time"
+        >A</button>
         <button
           className={`mini ${track.muted ? 'on' : ''}`}
           onClick={(e) => { e.stopPropagation(); toggleMute(track.id) }}

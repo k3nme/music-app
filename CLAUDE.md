@@ -21,6 +21,7 @@ node scripts/audio-e2e.mjs    # import, warp, separate, render, bundle
 node scripts/mashup-e2e.mjs   # the Mashup Lab, end to end
 node scripts/learn-e2e.mjs    # first-run doors, Learn mode, glossary
 node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
+node scripts/song-e2e.mjs     # write a song from a prompt, play it, keep it, undo
 ```
 
 ## Ground rules
@@ -85,6 +86,19 @@ offline render and the lesson player alike. It sits on the absolute song grid so
 it lands on the beat whatever the drums are doing. Channel graph is
 `... -> fader -> pump -> master`, so the sends breathe with the track.
 
+**A style is one idea, in one place.** `src/ai/styles.ts` holds tempo, kit,
+groove, tonality, progressions, instrument casting, duck amount and song shape
+per genre. The Ideas panel reads the groove; the composer reads all of it. Add a
+genre there and both get it. A preset named in a style is checked against the
+real library by a test, so a typo fails in vitest rather than silently giving
+someone a piano.
+
+**Generated songs need headroom in two places.** Every part plays from the first
+bar, and the shared reverb and delay keep accumulating across a long render — a
+mix that measures fine over eight bars can be over unity by the last chorus. The
+composer lowers the faders *and* the master returns. `scripts/song-e2e.mjs`
+checks both a window around the loudest moment and a whole song end to end.
+
 **Suggestions never mutate.** `Suggestion.apply` returns a new project. This is
 what keeps undo working, and it's the contract that would make a remote
 provider safe.
@@ -95,6 +109,36 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **A slot is never longer than the material.** The DJ set gave every record
+  the same number of bars, so a short edit left silence in the middle of the
+  mix — and since the next record enters relative to where this one *ends*, the
+  hole landed exactly on the blend. `planSet` clamps the turn, and the blend
+  with it.
+- **Crossfade at equal power.** Two uncorrelated records fading past each other
+  on straight lines are each at half level in the middle and sum about 3 dB
+  down. They meet at `Math.SQRT1_2`.
+- **Score with multiplication when a factor can veto.** Mashup compatibility
+  added tempo and key, so a perfect key rescued a 30% stretch and called it
+  workable. Where one factor makes the whole thing unusable on its own, it has
+  to be a multiplier.
+- **Peak-hold a level check, never read one instant.** A generated song opens
+  with a quiet intro, so `engine.level()` a fixed moment after pressing play
+  came back anywhere from 0.03 to 0.32 across runs. Sample over a second or two
+  and take the maximum.
+- **An intermittently failing browser test is usually a race in the app.** The
+  Mashup Lab imported its decks concurrently and appended each one as its own
+  analysis finished, so deck order — and with it the target tempo and key the
+  first deck sets — depended on which file was quicker. It looked like a flaky
+  test for weeks. Slots are claimed synchronously now (`Deck.seq`).
+- **Anything that decides for the user shows its working.** `SongBrief.reasons`
+  and `Suggestion.reasons` are shown in the UI. A guess you cannot see or
+  change is worse than no guess, and it is the difference between a feature
+  people trust and one they turn off.
+- **Generation is seeded, never random.** Same prompt and seed, same song; a
+  new seed is "another version". Without that there is nothing to assert on and
+  no way to get back a take someone liked.
+- **A bare letter is not a key.** `readKey` needs an accidental or a quality.
+  Reading the first `[a-g]` it saw turned "a happy track in F minor" into G.
 - **A gate in the middle of a measurement is a cliff.** The sound fingerprint
   used to report pitch clarity as 0 below a confidence threshold. Two hits of
   the same kick landing either side of it came back as 0.74 and 0.0 and

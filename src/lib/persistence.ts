@@ -100,6 +100,8 @@ export function migrate(project: Project): Project {
       kind: t.kind ?? 'midi',
       channel: { ...DEFAULT_CHANNEL, ...t.channel },
     })),
+    // Projects saved before automation existed simply have none.
+    automation: (project.automation ?? []).filter((lane) => lane && Array.isArray(lane.points)),
     audioClips: (project.audioClips ?? []).map((c) => ({
       ...c,
       warpMode: c.warpMode ?? 'stretch',

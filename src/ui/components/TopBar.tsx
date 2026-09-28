@@ -28,12 +28,13 @@ function Jobs() {
   )
 }
 
-export function TopBar({ onOpenFiles, onExport, onShare, onMashup, onSounds }: {
+export function TopBar({ onOpenFiles, onExport, onShare, onMashup, onSounds, onSong }: {
   onOpenFiles(): void
   onExport(): void
   onShare(): void
   onMashup(): void
   onSounds(): void
+  onSong(): void
 }) {
   const project = useStore((s) => s.project)
   const playing = useStore((s) => s.playing)
@@ -197,6 +198,12 @@ export function TopBar({ onOpenFiles, onExport, onShare, onMashup, onSounds }: {
       ><Book width={14} height={14} /></button>
       <button className="btn icon" onClick={() => setUI({ helpOpen: true })} title="Help (?)"><HelpIcon width={14} height={14} /></button>
 
+      <button
+        className="btn lg song-btn" onClick={onSong}
+        title="Write a whole song from a description (W)"
+      >
+        <Wand width={14} height={14} /> Write me a song
+      </button>
       <button
         className="btn lg" onClick={onSounds}
         title="Take a song apart into the sounds inside it (G)"

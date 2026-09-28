@@ -63,6 +63,10 @@ const INTERFACE_TERMS: GlossaryEntry[] = [
     meaning: 'One layer of a finished song pulled out on its own — the vocal, the drums, the bass.',
   },
   {
+    term: 'Brief',
+    meaning: 'What the songwriter understood from your words — the style, tempo, key and mood it is about to write from. Shown before it plays, so you can see whether it heard you.',
+  },
+  {
     term: 'Sampler',
     meaning: 'An instrument that plays recordings instead of making the sound from scratch. Press a higher key and the recording plays faster and higher.',
   },

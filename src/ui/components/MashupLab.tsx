@@ -11,6 +11,13 @@ import {
   bufferToChannels, createSample, ensureSample, getSampleBuffer, importAudioFile,
   knownSamples, samplePeaks, updateSampleMeta,
 } from '../../lib/samples'
+import { scorePair, suggestStems, type SongFacts } from '../../lib/compatibility'
+import { lanesFor, planSet } from '../../lib/djset'
+import {
+  createAudioClip, createAutomationLane, createTrack,
+  type AudioClip, type AutomationLane, type Track,
+} from '../../music/project'
+import { DEFAULT_CHANNEL } from '../../audio/engine'
 import { toKeySpec } from '../../music/matching'
 import { NOTE_NAMES } from '../../music/theory'
 import { uid } from '../../lib/id'
@@ -43,6 +50,8 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   const [working, setWorking] = useState<string | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  /** Hands out deck slots in the order files arrive. */
+  const nextDeck = useRef(0)
   const previewNodes = useRef<AudioBufferSourceNode[]>([])
   const targetKey = { root: targetRoot, mode: targetMode }
 
@@ -59,6 +68,9 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   // --- adding decks --------------------------------------------------------
 
   const addDeck = useCallback(async (file: File) => {
+    // Claimed synchronously, before any awaiting, so the slot reflects the
+    // order the files were handed over.
+    const seq = nextDeck.current++
     const ctx = await engine.resume()
     const job = startJob(`Reading ${file.name}`)
     try {
@@ -73,18 +85,20 @@ export function MashupLab({ onClose }: { onClose(): void }) {
 
       setDecks((current) => {
         // The first deck sets the target, so dropping one song and then
-        // another lands the second on the first's grid.
-        if (current.length === 0) {
+        // another lands the second on the first's grid. "First" means first
+        // handed over, not first to finish analysing.
+        if (seq === 0) {
           setTargetBpm(Math.round(analysis.beat.bpm))
           setTargetRoot(analysis.key.root)
           setTargetMode(analysis.key.mode)
         }
-        return [...current, {
-          id: uid('deck'), meta, analysis, channels, sampleRate: buffer.sampleRate,
+        const deck: Deck = {
+          id: uid('deck'), seq, meta, analysis, channels, sampleRate: buffer.sampleRate,
           stems: null, separating: false,
-          selection: current.length === 0 ? 'full' : (['vocals'] as StemName[]),
+          selection: seq === 0 ? 'full' : (['vocals'] as StemName[]),
           gain: 1, enabled: true, startBar: 0,
-        }]
+        }
+        return [...current, deck].sort((a, b) => a.seq - b.seq)
       })
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Could not read that file', 'warn')
@@ -94,6 +108,7 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   }, [flash, startJob, updateJob, endJob])
 
   const addFromLibrary = useCallback(async (sampleId: string) => {
+    const seq = nextDeck.current++
     const ctx = await engine.resume()
     const meta = knownSamples().find((s) => s.id === sampleId)
     if (!meta) return
@@ -108,17 +123,18 @@ export function MashupLab({ onClose }: { onClose(): void }) {
       )
       if (!meta.analysis) { await updateSampleMeta(meta.id, { analysis }); meta.analysis = analysis }
       setDecks((current) => {
-        if (current.length === 0) {
+        if (seq === 0) {
           setTargetBpm(Math.round(analysis.beat.bpm))
           setTargetRoot(analysis.key.root)
           setTargetMode(analysis.key.mode)
         }
-        return [...current, {
-          id: uid('deck'), meta, analysis, channels, sampleRate: buffer.sampleRate,
+        const deck: Deck = {
+          id: uid('deck'), seq, meta, analysis, channels, sampleRate: buffer.sampleRate,
           stems: null, separating: false,
-          selection: current.length === 0 ? 'full' : (['vocals'] as StemName[]),
+          selection: seq === 0 ? 'full' : (['vocals'] as StemName[]),
           gain: 1, enabled: true, startBar: 0,
-        }]
+        }
+        return [...current, deck].sort((a, b) => a.seq - b.seq)
       })
     } finally {
       endJob(job)
@@ -308,6 +324,133 @@ export function MashupLab({ onClose }: { onClose(): void }) {
     [decks],
   )
 
+  /**
+   * How each deck reads against the one setting the target.
+   *
+   * The lab could always do the hard part — pull two records onto one grid and
+   * correct their tuning. What it could not do was say whether they were worth
+   * pulling together in the first place, which is the part people actually
+   * find hard.
+   */
+  const pairings = useMemo(() => {
+    const factsOf = (deck: Deck): SongFacts => ({
+      id: deck.id,
+      name: deck.meta.name,
+      bpm: deck.analysis.beat.bpm,
+      root: deck.analysis.key.root,
+      mode: deck.analysis.key.mode,
+      tuningCents: deck.analysis.key.tuningCents,
+      loudnessDb: deck.analysis.loudnessDb,
+      durationSec: deck.analysis.durationSec,
+      keyConfidence: deck.analysis.key.confidence,
+    })
+    if (decks.length < 2) return new Map<string, ReturnType<typeof scorePair>>()
+    const first = factsOf(decks[0])
+    return new Map(decks.slice(1).map((deck) => [deck.id, scorePair(first, factsOf(deck))]))
+  }, [decks])
+
+  /** Take the stem split the pairing suggests. A suggestion, not a rule. */
+  const takeSuggestedStems = useCallback(() => {
+    const pairing = pairings.get(decks[1]?.id)
+    if (!pairing) return
+    const suggestion = suggestStems(pairing)
+    setDecks((current) => current.map((deck, index) => ({
+      ...deck,
+      selection: index === 0 ? suggestion.a : suggestion.b,
+    })))
+    flash(suggestion.why, 'good')
+  }, [pairings, decks, flash])
+
+  /**
+   * Lay the decks end to end as one continuous mix.
+   *
+   * The other thing you can do with several records. A mashup stacks them on
+   * the same bars; a set plays one after another, overlapping just enough to
+   * get from one to the next — and that overlap is written as automation,
+   * which is the whole reason automation had to exist first.
+   */
+  const buildSet = useCallback(() => {
+    const playable = decks.filter((deck) => deck.enabled)
+    if (playable.length < 2) { flash('A set needs at least two records', 'warn'); return }
+
+    const facts: SongFacts[] = playable.map((deck) => ({
+      id: deck.id,
+      name: deck.meta.name,
+      bpm: deck.analysis.beat.bpm,
+      root: deck.analysis.key.root,
+      mode: deck.analysis.key.mode,
+      tuningCents: deck.analysis.key.tuningCents,
+      loudnessDb: deck.analysis.loudnessDb,
+      durationSec: deck.analysis.durationSec,
+      keyConfidence: deck.analysis.key.confidence,
+    }))
+    const plan = planSet(facts, { bpm: targetBpm, blendBars: Math.min(16, bars), playBars: bars })
+    const beatsPerBar = project.beatsPerBar
+
+    commit()
+
+    // A set *is* the arrangement, so it replaces what is on the timeline
+    // rather than landing on top of it. Built in one go and set at once:
+    // adding tracks one at a time would leave the old ones underneath and
+    // play two records against a third.
+    const tracks: Track[] = []
+    const clips: AudioClip[] = []
+    const automation: AutomationLane[] = []
+
+    plan.entries.forEach((entry, index) => {
+      const deck = playable.find((d) => d.id === entry.song.id)
+      if (!deck) return
+      const hue = DECK_HUES[index % DECK_HUES.length]
+      const track = createTrack({
+        name: deck.meta.name.slice(0, 28),
+        kind: 'audio',
+        color: hue,
+        channel: { ...DEFAULT_CHANNEL, volume: 0.85 },
+      })
+      tracks.push(track)
+
+      // Start at the record's first downbeat so the grid lines up, and take
+      // only as much of it as this slot needs.
+      const barSec = barSeconds(entry.song.bpm, beatsPerBar)
+      clips.push(createAudioClip(track.id, deck.meta.id, {
+        startBeat: entry.startBar * beatsPerBar,
+        name: deck.meta.name,
+        offsetSec: deck.analysis.beat.downbeatSec,
+        sourceDurationSec: Math.min(
+          deck.analysis.durationSec - deck.analysis.beat.downbeatSec,
+          entry.bars * barSec,
+        ),
+        // Derived from the plan's speed, so a record counted at double time
+        // lands at the set tempo without being stretched.
+        originalBpm: plan.bpm / entry.speed,
+        warp: true,
+        pitchSemitones: entry.transpose,
+        hue,
+      }))
+
+      for (const lane of lanesFor(entry, beatsPerBar, 0.85)) {
+        automation.push(createAutomationLane(track.id, lane.param, lane.points))
+      }
+    })
+
+    useStore.setState((current) => ({
+      project: {
+        ...current.project,
+        bpm: plan.bpm,
+        tracks,
+        clips: [],
+        audioClips: clips,
+        automation,
+        lengthBeats: plan.totalBars * beatsPerBar,
+        updatedAt: Date.now(),
+      },
+    }))
+    useStore.getState().setUI({ loopEnabled: false })
+
+    flash(`${plan.entries.length} records, ${plan.totalBars} bars — ${plan.notes[0]}`, 'good')
+    onClose()
+  }, [decks, targetBpm, bars, project.beatsPerBar, commit, flash, onClose])
+
   const sectionSeconds = (bars * 4 * 60) / Math.max(1, targetBpm)
   const busy = working !== null || decks.some((d) => d.separating)
 
@@ -330,6 +473,20 @@ export function MashupLab({ onClose }: { onClose(): void }) {
 
         <div className="sheet-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {decks.length >= 2 && pairings.get(decks[1].id) && (
+              <div className="fit-panel">
+                <span className={`fit ${pairings.get(decks[1].id)!.verdict.replace(/\s+/g, '-')}`}>
+                  {pairings.get(decks[1].id)!.verdict} fit
+                </span>
+                <div className="fit-notes">
+                  {pairings.get(decks[1].id)!.notes.map((note) => (
+                    <span key={note} className="fit-note">{note}</span>
+                  ))}
+                </div>
+                <button className="btn" onClick={takeSuggestedStems}>Use the stems it suggests</button>
+              </div>
+            )}
+
             {/* --- target ---------------------------------------------- */}
             <div className="match-summary">
               <span className="label">Mash to</span>
@@ -399,6 +556,14 @@ export function MashupLab({ onClose }: { onClose(): void }) {
                       <span className="fact warn" title="Not at concert pitch — the transposition corrects for it.">
                         {deck.analysis.key.tuningCents > 0 ? '+' : ''}
                         {Math.round(deck.analysis.key.tuningCents)}¢
+                      </span>
+                    )}
+                    {pairings.get(deck.id) && (
+                      <span
+                        className={`fit ${pairings.get(deck.id)!.verdict.replace(/\s+/g, '-')}`}
+                        title={pairings.get(deck.id)!.notes.join('\n')}
+                      >
+                        {pairings.get(deck.id)!.verdict} fit
                       </span>
                     )}
                     <button
@@ -566,6 +731,11 @@ export function MashupLab({ onClose }: { onClose(): void }) {
             {decks.some((d) => d.enabled && d.selection !== 'full' && d.selection.length === 0) &&
               ' · one deck has nothing selected'}
           </span>
+          <button
+            className="btn" onClick={buildSet}
+            disabled={decks.filter((d) => d.enabled).length < 2 || busy}
+            title="Lay the records end to end as one continuous mix"
+          >Build a DJ set</button>
           <button className="btn" onClick={() => { stopPreview(); onClose() }}>Cancel</button>
           <button
             className="btn primary"
