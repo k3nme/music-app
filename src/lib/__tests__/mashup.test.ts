@@ -22,7 +22,7 @@ function ramp(seconds: number, sampleRate = SR): Float32Array {
 }
 
 const deckBase = (over: Partial<Deck>): Deck => ({
-  id: 'd', meta: {} as Deck['meta'], analysis: analysis(120, 0),
+  id: 'd', seq: 0, meta: {} as Deck['meta'], analysis: analysis(120, 0),
   channels: [Float32Array.from([1, 1, 1])], sampleRate: SR,
   stems: null, separating: false, selection: 'full', gain: 1, enabled: true, startBar: 0,
   ...over,

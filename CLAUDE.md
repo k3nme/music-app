@@ -109,6 +109,11 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **An intermittently failing browser test is usually a race in the app.** The
+  Mashup Lab imported its decks concurrently and appended each one as its own
+  analysis finished, so deck order — and with it the target tempo and key the
+  first deck sets — depended on which file was quicker. It looked like a flaky
+  test for weeks. Slots are claimed synchronously now (`Deck.seq`).
 - **Anything that decides for the user shows its working.** `SongBrief.reasons`
   and `Suggestion.reasons` are shown in the UI. A guess you cannot see or
   change is worse than no guess, and it is the difference between a feature

@@ -43,6 +43,8 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   const [working, setWorking] = useState<string | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  /** Hands out deck slots in the order files arrive. */
+  const nextDeck = useRef(0)
   const previewNodes = useRef<AudioBufferSourceNode[]>([])
   const targetKey = { root: targetRoot, mode: targetMode }
 
@@ -59,6 +61,9 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   // --- adding decks --------------------------------------------------------
 
   const addDeck = useCallback(async (file: File) => {
+    // Claimed synchronously, before any awaiting, so the slot reflects the
+    // order the files were handed over.
+    const seq = nextDeck.current++
     const ctx = await engine.resume()
     const job = startJob(`Reading ${file.name}`)
     try {
@@ -73,18 +78,20 @@ export function MashupLab({ onClose }: { onClose(): void }) {
 
       setDecks((current) => {
         // The first deck sets the target, so dropping one song and then
-        // another lands the second on the first's grid.
-        if (current.length === 0) {
+        // another lands the second on the first's grid. "First" means first
+        // handed over, not first to finish analysing.
+        if (seq === 0) {
           setTargetBpm(Math.round(analysis.beat.bpm))
           setTargetRoot(analysis.key.root)
           setTargetMode(analysis.key.mode)
         }
-        return [...current, {
-          id: uid('deck'), meta, analysis, channels, sampleRate: buffer.sampleRate,
+        const deck: Deck = {
+          id: uid('deck'), seq, meta, analysis, channels, sampleRate: buffer.sampleRate,
           stems: null, separating: false,
-          selection: current.length === 0 ? 'full' : (['vocals'] as StemName[]),
+          selection: seq === 0 ? 'full' : (['vocals'] as StemName[]),
           gain: 1, enabled: true, startBar: 0,
-        }]
+        }
+        return [...current, deck].sort((a, b) => a.seq - b.seq)
       })
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Could not read that file', 'warn')
@@ -94,6 +101,7 @@ export function MashupLab({ onClose }: { onClose(): void }) {
   }, [flash, startJob, updateJob, endJob])
 
   const addFromLibrary = useCallback(async (sampleId: string) => {
+    const seq = nextDeck.current++
     const ctx = await engine.resume()
     const meta = knownSamples().find((s) => s.id === sampleId)
     if (!meta) return
@@ -108,17 +116,18 @@ export function MashupLab({ onClose }: { onClose(): void }) {
       )
       if (!meta.analysis) { await updateSampleMeta(meta.id, { analysis }); meta.analysis = analysis }
       setDecks((current) => {
-        if (current.length === 0) {
+        if (seq === 0) {
           setTargetBpm(Math.round(analysis.beat.bpm))
           setTargetRoot(analysis.key.root)
           setTargetMode(analysis.key.mode)
         }
-        return [...current, {
-          id: uid('deck'), meta, analysis, channels, sampleRate: buffer.sampleRate,
+        const deck: Deck = {
+          id: uid('deck'), seq, meta, analysis, channels, sampleRate: buffer.sampleRate,
           stems: null, separating: false,
-          selection: current.length === 0 ? 'full' : (['vocals'] as StemName[]),
+          selection: seq === 0 ? 'full' : (['vocals'] as StemName[]),
           gain: 1, enabled: true, startBar: 0,
-        }]
+        }
+        return [...current, deck].sort((a, b) => a.seq - b.seq)
       })
     } finally {
       endJob(job)

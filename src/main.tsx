@@ -26,6 +26,7 @@ if (import.meta.env.DEV) {
     import('./ai'),
     import('./ai/prompt'),
     import('./ai/compose'),
+    import('./music/automation'),
   ]).then((modules) => {
     Object.assign(window, { __overtone: Object.assign({}, ...modules) })
   })

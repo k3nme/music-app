@@ -161,6 +161,12 @@ const deckFacts = await page.evaluate(() =>
   [...document.querySelectorAll('.deck')].map((deck) =>
     [...deck.querySelectorAll('.deck-head .fact')].map((f) => f.textContent.trim())),
 )
+// Deck order is the order the files were handed over, not the order their
+// analyses finished. The two are analysed concurrently and take different
+// amounts of time, and the first deck sets the target tempo and key — so
+// without that guarantee, dropping the same two songs twice gives two
+// different mashups. This check reads as "deck A is song A" and is really
+// asserting that the race is gone.
 record('Deck A reads ~100 BPM', deckFacts[0].some((f) => /\b(99|100|101)\b/.test(f)), deckFacts[0].join(' | '))
 record('Deck B reads ~92 BPM', deckFacts[1].some((f) => /\b(91|92|93)\b/.test(f)), deckFacts[1].join(' | '))
 record('Deck B is flagged as off concert pitch',

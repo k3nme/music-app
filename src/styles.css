@@ -1062,3 +1062,34 @@ input[type='range']::-moz-range-thumb {
 .song-take.on .song-take-num { background: var(--accent); color: #fff; }
 .song-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .song-warn { font-size: 11.5px; color: var(--faint); }
+
+/* automation lanes */
+.auto-head {
+  padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  background: var(--bg-1); flex: none;
+}
+.auto-head-row { display: flex; align-items: center; gap: 4px; }
+.auto-param, .auto-shape {
+  flex: 1; min-width: 0; height: 21px; padding: 0 5px; font-size: 11px;
+}
+.auto-lane {
+  position: relative; border-bottom: 1px solid var(--line-soft);
+  background: rgba(124, 92, 255, 0.045);
+}
+.auto-lane svg { display: block; cursor: crosshair; }
+.auto-edge { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; }
+.auto-path {
+  fill: none; stroke: hsl(var(--hue, 265) 75% 62%); stroke-width: 1.75;
+  stroke-linejoin: round;
+}
+.auto-point {
+  fill: var(--bg-0); stroke: hsl(var(--hue, 265) 80% 68%); stroke-width: 2;
+  cursor: grab;
+}
+.auto-point:hover { fill: hsl(var(--hue, 265) 80% 68%); r: 6; }
+.auto-point.hold { fill: hsl(var(--hue, 265) 80% 68%); }
+.auto-hint {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--faint); pointer-events: none;
+}

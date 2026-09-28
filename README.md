@@ -132,6 +132,34 @@ and can explain every choice. Where a model would genuinely do better, the
 `MusicProvider` seam is where it plugs in: `'song'` is just another capability,
 and a remote one would return the same kind of suggestion.
 
+### Make things move
+
+![An automation lane](docs/screenshot-automation.png)
+
+Every mixer control can be made to **change over time**. Press **A** on a track
+and a lane opens under it: click to add points, drag them, double-click one to
+make it step instead of slide. Volume, pan, filter, reverb, delay and drive.
+
+The filter is the one worth knowing about. It is drawn and interpolated
+**logarithmically**, because that is how frequency is heard — a linear sweep
+from 20 kHz to 100 Hz spends almost all its time in the top octave where
+nothing is happening and then falls off a cliff. Drawn this way, a sweep is a
+straight line and behaves like one.
+
+There are ready-made shapes for the moves people actually want — filter opens,
+filter closes, fade in, fade out, drop out and return, reverb wash — drawn
+across the loop region, because "here" almost always means the part you are
+looping.
+
+A lane holds its first value before its first point and its last value after
+its last, so a curve drawn over bars 17-24 leaves the opening alone. An
+automated parameter is also *owned* by its lane: the mixer knob stops writing
+to it, rather than the two fighting over the same value every time React
+re-renders.
+
+Curves play live and are reproduced exactly in the offline render, because both
+read the same pure functions.
+
 ### Take a song apart, and keep what is in it
 
 Drop in a song. Overtone separates it, finds the **individual sounds** inside
@@ -239,6 +267,7 @@ src/
       analysis.worker.ts pitch analysis off the main thread
     workers/dsp.worker.ts  analysis, separation and warping off the main thread
   music/
+    automation.ts        values that change over time (pure, so it is tested)
     theory.ts            scales (incl. ragas and maqam), chords, progressions
     key.ts               key detection from a melody
     matching.ts          tempo/key/tuning matching between recordings
@@ -349,6 +378,7 @@ node scripts/mashup-e2e.mjs   # mashes two songs of different tempo, key and tun
 node scripts/learn-e2e.mjs    # the first-run doors, the lessons and the glossary
 node scripts/sounds-e2e.mjs   # take a song apart, keep it, reload, bundle it
 node scripts/song-e2e.mjs     # write a song from a prompt, play it, keep it, undo
+node scripts/automation-e2e.mjs  # draw a curve, hear it move, render it, undo it
 ```
 
 The unit tests cover the parts where being wrong is silent: pitch detection
