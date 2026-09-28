@@ -1101,3 +1101,22 @@ input[type='range']::-moz-range-thumb {
   border: 1px solid var(--line); background: var(--bg-1); color: var(--faint);
 }
 .song-keep-track.on { border-color: var(--accent); color: var(--text); }
+
+/* how well two records go together */
+.fit {
+  font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
+}
+.fit.great { background: color-mix(in srgb, var(--good, #3ddc97) 24%, transparent); color: var(--good, #3ddc97); }
+.fit.workable { background: var(--bg-2); color: var(--text); }
+.fit.a-stretch { background: color-mix(in srgb, var(--warn, #e8a33d) 22%, transparent); color: var(--warn, #e8a33d); }
+.fit-panel {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--bg-1);
+}
+.fit-notes { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; }
+.fit-note {
+  font-size: 11px; color: var(--faint);
+  padding: 2px 7px; border-radius: 999px; background: var(--bg-2);
+}

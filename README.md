@@ -92,6 +92,19 @@ the timeline, where each part is baked at the target tempo.
 
 ![The Mashup Lab](docs/screenshot-mashup.png)
 
+**It tells you whether two records go together.** Tempo distance — allowing for
+half and double time, because a 70 BPM record under a 140 BPM one is not a tempo
+problem but how half of all mashups work — key relationship including the
+relative major/minor and distance round the circle of fifths, and how confident
+the key detection was. The verdict is one word (*great*, *workable*, *a
+stretch*) with the reasoning in plain sentences underneath, and it will also
+choose which stems come from which deck: the quieter record gives up its vocal,
+the louder one keeps the groove.
+
+The score is **multiplied**, not added, so a perfect key can't rescue a tempo
+that cannot be matched. A mashup out of time is not a mashup, however well the
+keys get on.
+
 The cross-language part isn't a feature so much as a consequence: separation and
 matching work on the spectrogram and the beat grid, never on words, so a Tamil
 vocal behaves exactly like an English one. Where it *does* show up is **tuning**.

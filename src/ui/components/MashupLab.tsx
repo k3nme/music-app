@@ -11,6 +11,7 @@ import {
   bufferToChannels, createSample, ensureSample, getSampleBuffer, importAudioFile,
   knownSamples, samplePeaks, updateSampleMeta,
 } from '../../lib/samples'
+import { scorePair, suggestStems, type SongFacts } from '../../lib/compatibility'
 import { toKeySpec } from '../../music/matching'
 import { NOTE_NAMES } from '../../music/theory'
 import { uid } from '../../lib/id'
@@ -317,6 +318,43 @@ export function MashupLab({ onClose }: { onClose(): void }) {
     [decks],
   )
 
+  /**
+   * How each deck reads against the one setting the target.
+   *
+   * The lab could always do the hard part — pull two records onto one grid and
+   * correct their tuning. What it could not do was say whether they were worth
+   * pulling together in the first place, which is the part people actually
+   * find hard.
+   */
+  const pairings = useMemo(() => {
+    const factsOf = (deck: Deck): SongFacts => ({
+      id: deck.id,
+      name: deck.meta.name,
+      bpm: deck.analysis.beat.bpm,
+      root: deck.analysis.key.root,
+      mode: deck.analysis.key.mode,
+      tuningCents: deck.analysis.key.tuningCents,
+      loudnessDb: deck.analysis.loudnessDb,
+      durationSec: deck.analysis.durationSec,
+      keyConfidence: deck.analysis.key.confidence,
+    })
+    if (decks.length < 2) return new Map<string, ReturnType<typeof scorePair>>()
+    const first = factsOf(decks[0])
+    return new Map(decks.slice(1).map((deck) => [deck.id, scorePair(first, factsOf(deck))]))
+  }, [decks])
+
+  /** Take the stem split the pairing suggests. A suggestion, not a rule. */
+  const takeSuggestedStems = useCallback(() => {
+    const pairing = pairings.get(decks[1]?.id)
+    if (!pairing) return
+    const suggestion = suggestStems(pairing)
+    setDecks((current) => current.map((deck, index) => ({
+      ...deck,
+      selection: index === 0 ? suggestion.a : suggestion.b,
+    })))
+    flash(suggestion.why, 'good')
+  }, [pairings, decks, flash])
+
   const sectionSeconds = (bars * 4 * 60) / Math.max(1, targetBpm)
   const busy = working !== null || decks.some((d) => d.separating)
 
@@ -339,6 +377,20 @@ export function MashupLab({ onClose }: { onClose(): void }) {
 
         <div className="sheet-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {decks.length >= 2 && pairings.get(decks[1].id) && (
+              <div className="fit-panel">
+                <span className={`fit ${pairings.get(decks[1].id)!.verdict.replace(/\s+/g, '-')}`}>
+                  {pairings.get(decks[1].id)!.verdict} fit
+                </span>
+                <div className="fit-notes">
+                  {pairings.get(decks[1].id)!.notes.map((note) => (
+                    <span key={note} className="fit-note">{note}</span>
+                  ))}
+                </div>
+                <button className="btn" onClick={takeSuggestedStems}>Use the stems it suggests</button>
+              </div>
+            )}
+
             {/* --- target ---------------------------------------------- */}
             <div className="match-summary">
               <span className="label">Mash to</span>
@@ -408,6 +460,14 @@ export function MashupLab({ onClose }: { onClose(): void }) {
                       <span className="fact warn" title="Not at concert pitch — the transposition corrects for it.">
                         {deck.analysis.key.tuningCents > 0 ? '+' : ''}
                         {Math.round(deck.analysis.key.tuningCents)}¢
+                      </span>
+                    )}
+                    {pairings.get(deck.id) && (
+                      <span
+                        className={`fit ${pairings.get(deck.id)!.verdict.replace(/\s+/g, '-')}`}
+                        title={pairings.get(deck.id)!.notes.join('\n')}
+                      >
+                        {pairings.get(deck.id)!.verdict} fit
                       </span>
                     )}
                     <button

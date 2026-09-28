@@ -169,6 +169,33 @@ const deckFacts = await page.evaluate(() =>
 // asserting that the race is gone.
 record('Deck A reads ~100 BPM', deckFacts[0].some((f) => /\b(99|100|101)\b/.test(f)), deckFacts[0].join(' | '))
 record('Deck B reads ~92 BPM', deckFacts[1].some((f) => /\b(91|92|93)\b/.test(f)), deckFacts[1].join(' | '))
+// --- does it say whether these two go together? --------------------------
+const fit = await page.evaluate(() => {
+  const badge = document.querySelector('.fit-panel .fit')
+  const notes = [...document.querySelectorAll('.fit-note')].map((n) => n.textContent.trim())
+  return { verdict: badge?.textContent?.trim() ?? null, notes }
+})
+record('It says how well the two records go together',
+  Boolean(fit.verdict), fit.verdict ?? 'no verdict shown')
+record('And explains why, in sentences',
+  fit.notes.length >= 2 && fit.notes.every((n) => n.length > 10), fit.notes.join(' · '))
+record('It read the tempo relationship',
+  fit.notes.some((n) => /tempo|%|time/i.test(n)), fit.notes.join(' · '))
+record('And the key relationship',
+  fit.notes.some((n) => /major|minor|semitone/i.test(n)), fit.notes.join(' · '))
+
+const suggested = await page.evaluate(async () => {
+  const before = [...document.querySelectorAll('.deck-head .fact')].map((f) => f.textContent.trim())
+  const button = [...document.querySelectorAll('button')]
+    .find((b) => b.textContent.includes('Use the stems it suggests'))
+  button?.click()
+  await new Promise((r) => setTimeout(r, 250))
+  const after = [...document.querySelectorAll('.deck-head .fact')].map((f) => f.textContent.trim())
+  return { had: Boolean(button), before, after }
+})
+record('It can choose the stems for you', suggested.had && suggested.after.length > 0,
+  suggested.after.slice(0, 4).join(' | '))
+
 record('Deck B is flagged as off concert pitch',
   deckFacts[1].some((f) => f.includes('¢')), deckFacts[1].join(' | '))
 
@@ -234,8 +261,12 @@ record('Both parts start on the same bar',
 record('Clips are baked at the project tempo, needing no further warp',
   committed.clips.every((c) => Math.abs((c.originalBpm ?? 0) - committed.bpm) < 0.51),
   JSON.stringify(committed.clips.map((c) => c.originalBpm)))
-record('Deck B contributes only its vocal',
-  committed.clips.some((c) => c.name.includes('Vocals')),
+// The suggestion was taken earlier in this run, so deck B brings the vocal and
+// deck A keeps the groove — which is the thing that must not silently become
+// "both decks play their full mix".
+record('Each deck contributes only the stems it was asked for',
+  committed.clips.some((c) => c.name.includes('Vocals')) &&
+  committed.clips.every((c) => !c.name.includes('Full mix')),
   committed.clips.map((c) => c.name).join(' | '))
 
 // --- does it actually sound? ----------------------------------------------

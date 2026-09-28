@@ -109,6 +109,10 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **Score with multiplication when a factor can veto.** Mashup compatibility
+  added tempo and key, so a perfect key rescued a 30% stretch and called it
+  workable. Where one factor makes the whole thing unusable on its own, it has
+  to be a multiplier.
 - **Peak-hold a level check, never read one instant.** A generated song opens
   with a quiet intro, so `engine.level()` a fixed moment after pressing play
   came back anywhere from 0.03 to 0.32 across runs. Sample over a second or two
