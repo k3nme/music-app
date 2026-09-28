@@ -292,6 +292,102 @@ record('Rendered length matches the chosen section',
   Math.abs(render.seconds - 0.5 - 19.2) < 1.5, `${render.seconds.toFixed(1)}s`)
 
 await page.screenshot({ path: 'scripts/screenshots/mashup-result.png' })
+
+// --- a DJ set: the same records, end to end ------------------------------
+// Everything above stacked two records on the same bars. A set plays them one
+// after another with the transition written as automation, which is the thing
+// automation was built for.
+await page.getByRole('button', { name: /Mashup/ }).click()
+await page.waitForSelector('.sheet')
+
+// Re-add both songs from the library. Their analyses are already stored, so
+// this costs nothing.
+// Read the list fresh each time: the picker hides whatever is already on a
+// deck, so the options shift after every pick.
+const libraryPicker = page.locator('.sheet select').last()
+for (let pick = 0; pick < 2; pick++) {
+  const values = []
+  for (const option of await libraryPicker.locator('option').all()) {
+    const value = await option.getAttribute('value')
+    // The earlier mashup left its own rendered stems in the library; the two
+    // original songs are the ones with a full analysis behind them.
+    if (value && /song-[ab]/.test(await option.textContent() ?? '')) values.push(value)
+  }
+  if (values.length === 0) break
+  await libraryPicker.selectOption(values[0])
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('.deck').length === n, pick + 1, { timeout: 30000 },
+  )
+}
+const deckCount = await page.locator('.deck').count()
+record('Both records load back onto the decks', deckCount === 2, `${deckCount} decks`)
+
+await page.getByRole('button', { name: 'Build a DJ set' }).click()
+await page.waitForSelector('.sheet', { state: 'detached' })
+
+const built = await page.evaluate(() => {
+  const project = window.__overtone.useStore.getState().project
+  const clips = [...project.audioClips].sort((a, b) => a.startBeat - b.startBeat)
+  return {
+    bpm: project.bpm,
+    lengthBeats: project.lengthBeats,
+    clips: clips.map((c) => ({ start: c.startBeat, name: c.name, originalBpm: c.originalBpm })),
+    lanes: project.automation.map((l) => ({ param: l.param, points: l.points.length })),
+  }
+})
+
+record('A set plays the records one after another, not on top of each other',
+  built.clips.length === 2 && built.clips[1].start > built.clips[0].start,
+  built.clips.map((c) => `${c.name}@${c.start}`).join(' → '))
+record('Overlapping, so there is no gap to fall into',
+  built.clips[1].start > 0 && built.clips[1].start < built.lengthBeats,
+  `second enters at beat ${built.clips[1].start} of ${built.lengthBeats}`)
+record('Every record is warped to one tempo',
+  built.clips.every((c) => Math.abs((c.originalBpm ?? 0) - built.bpm) < 12 ||
+    Math.abs((c.originalBpm ?? 0) - built.bpm * 2) < 12),
+  `${built.bpm} BPM; clips read ${built.clips.map((c) => Math.round(c.originalBpm ?? 0)).join(', ')}`)
+record('Each change is written as automation',
+  built.lanes.length >= 2 &&
+  built.lanes.some((l) => l.param === 'volume') &&
+  built.lanes.some((l) => l.param === 'tone'),
+  built.lanes.map((l) => `${l.param}:${l.points}`).join(' '))
+
+// The point of all of it: does it come out as one continuous mix?
+const mix = await page.evaluate(async () => {
+  const { renderProject, useStore } = window.__overtone
+  const buffer = await renderProject(useStore.getState().project, {
+    tailSeconds: 0.5, sampleRate: 22050,
+  })
+  const data = buffer.getChannelData(0)
+  const slices = 24
+  const chunk = Math.floor(data.length / slices)
+  const loud = []
+  let peak = 0
+  for (let s = 0; s < slices; s++) {
+    let sum = 0
+    for (let i = s * chunk; i < (s + 1) * chunk; i++) {
+      sum += data[i] * data[i]
+      peak = Math.max(peak, Math.abs(data[i]))
+    }
+    loud.push(Math.sqrt(sum / chunk))
+  }
+  return { loud, peak, seconds: buffer.duration }
+})
+
+const median = [...mix.loud].sort((a, b) => a - b)[Math.floor(mix.loud.length / 2)]
+// Ignore the very ends: a set opens and closes dry by design.
+const middle = mix.loud.slice(1, -1)
+const quietest = Math.min(...middle)
+record('It renders as one continuous mix, with no silence in the middle',
+  quietest > median * 0.3,
+  `quietest ${quietest.toFixed(3)} against a median of ${median.toFixed(3)} over ${mix.seconds.toFixed(0)}s`)
+record('And the crossfade does not dip',
+  // Equal power, not equal gain: two straight fades meeting at half level sum
+  // about 3 dB down, an audible hole exactly where the mix should be seamless.
+  quietest > median * 0.5, middle.map((v) => v.toFixed(2)).join(' '))
+record('The set does not clip', mix.peak <= 1.001, `peak ${mix.peak.toFixed(3)}`)
+await page.screenshot({ path: 'scripts/screenshots/dj-set.png' })
+
 record('No uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '))
 
 await browser.close()

@@ -105,6 +105,28 @@ The score is **multiplied**, not added, so a perfect key can't rescue a tempo
 that cannot be matched. A mashup out of time is not a mashup, however well the
 keys get on.
 
+**Or lay them end to end as a DJ set.** The other thing to do with several
+records: one after another on a beatmatched grid, overlapping just enough to
+get from one to the next. It orders them so each goes with the one after it
+(greedy nearest-neighbour on the compatibility score — not the optimal
+ordering, which is a travelling-salesman problem, but the decision a DJ
+actually makes, one record at a time), warps everything to a single tempo, and
+**writes each transition as automation**: the outgoing record fades and closes
+its filter while the incoming one opens up.
+
+The crossfade is **equal power**, not equal gain. Two uncorrelated records
+fading past each other on straight lines are each at half level in the middle,
+which sums about 3 dB down — an audible hole exactly where the mix is supposed
+to be seamless. They meet at 0.707 instead.
+
+No record is given a longer turn than it has music for, which sounds obvious
+and was not: asking a 10-bar edit to fill a 48-bar slot leaves 38 bars of
+silence, and because the next record comes in relative to where this one
+*ends*, the hole lands precisely on the blend.
+
+This is what automation was built for. Before it, a transition could not be
+expressed at all.
+
 The cross-language part isn't a feature so much as a consequence: separation and
 matching work on the spectrogram and the beat grid, never on words, so a Tamil
 vocal behaves exactly like an English one. Where it *does* show up is **tuning**.

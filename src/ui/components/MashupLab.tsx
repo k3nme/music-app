@@ -12,6 +12,12 @@ import {
   knownSamples, samplePeaks, updateSampleMeta,
 } from '../../lib/samples'
 import { scorePair, suggestStems, type SongFacts } from '../../lib/compatibility'
+import { lanesFor, planSet } from '../../lib/djset'
+import {
+  createAudioClip, createAutomationLane, createTrack,
+  type AudioClip, type AutomationLane, type Track,
+} from '../../music/project'
+import { DEFAULT_CHANNEL } from '../../audio/engine'
 import { toKeySpec } from '../../music/matching'
 import { NOTE_NAMES } from '../../music/theory'
 import { uid } from '../../lib/id'
@@ -355,6 +361,96 @@ export function MashupLab({ onClose }: { onClose(): void }) {
     flash(suggestion.why, 'good')
   }, [pairings, decks, flash])
 
+  /**
+   * Lay the decks end to end as one continuous mix.
+   *
+   * The other thing you can do with several records. A mashup stacks them on
+   * the same bars; a set plays one after another, overlapping just enough to
+   * get from one to the next — and that overlap is written as automation,
+   * which is the whole reason automation had to exist first.
+   */
+  const buildSet = useCallback(() => {
+    const playable = decks.filter((deck) => deck.enabled)
+    if (playable.length < 2) { flash('A set needs at least two records', 'warn'); return }
+
+    const facts: SongFacts[] = playable.map((deck) => ({
+      id: deck.id,
+      name: deck.meta.name,
+      bpm: deck.analysis.beat.bpm,
+      root: deck.analysis.key.root,
+      mode: deck.analysis.key.mode,
+      tuningCents: deck.analysis.key.tuningCents,
+      loudnessDb: deck.analysis.loudnessDb,
+      durationSec: deck.analysis.durationSec,
+      keyConfidence: deck.analysis.key.confidence,
+    }))
+    const plan = planSet(facts, { bpm: targetBpm, blendBars: Math.min(16, bars), playBars: bars })
+    const beatsPerBar = project.beatsPerBar
+
+    commit()
+
+    // A set *is* the arrangement, so it replaces what is on the timeline
+    // rather than landing on top of it. Built in one go and set at once:
+    // adding tracks one at a time would leave the old ones underneath and
+    // play two records against a third.
+    const tracks: Track[] = []
+    const clips: AudioClip[] = []
+    const automation: AutomationLane[] = []
+
+    plan.entries.forEach((entry, index) => {
+      const deck = playable.find((d) => d.id === entry.song.id)
+      if (!deck) return
+      const hue = DECK_HUES[index % DECK_HUES.length]
+      const track = createTrack({
+        name: deck.meta.name.slice(0, 28),
+        kind: 'audio',
+        color: hue,
+        channel: { ...DEFAULT_CHANNEL, volume: 0.85 },
+      })
+      tracks.push(track)
+
+      // Start at the record's first downbeat so the grid lines up, and take
+      // only as much of it as this slot needs.
+      const barSec = barSeconds(entry.song.bpm, beatsPerBar)
+      clips.push(createAudioClip(track.id, deck.meta.id, {
+        startBeat: entry.startBar * beatsPerBar,
+        name: deck.meta.name,
+        offsetSec: deck.analysis.beat.downbeatSec,
+        sourceDurationSec: Math.min(
+          deck.analysis.durationSec - deck.analysis.beat.downbeatSec,
+          entry.bars * barSec,
+        ),
+        // Derived from the plan's speed, so a record counted at double time
+        // lands at the set tempo without being stretched.
+        originalBpm: plan.bpm / entry.speed,
+        warp: true,
+        pitchSemitones: entry.transpose,
+        hue,
+      }))
+
+      for (const lane of lanesFor(entry, beatsPerBar, 0.85)) {
+        automation.push(createAutomationLane(track.id, lane.param, lane.points))
+      }
+    })
+
+    useStore.setState((current) => ({
+      project: {
+        ...current.project,
+        bpm: plan.bpm,
+        tracks,
+        clips: [],
+        audioClips: clips,
+        automation,
+        lengthBeats: plan.totalBars * beatsPerBar,
+        updatedAt: Date.now(),
+      },
+    }))
+    useStore.getState().setUI({ loopEnabled: false })
+
+    flash(`${plan.entries.length} records, ${plan.totalBars} bars — ${plan.notes[0]}`, 'good')
+    onClose()
+  }, [decks, targetBpm, bars, project.beatsPerBar, commit, flash, onClose])
+
   const sectionSeconds = (bars * 4 * 60) / Math.max(1, targetBpm)
   const busy = working !== null || decks.some((d) => d.separating)
 
@@ -635,6 +731,11 @@ export function MashupLab({ onClose }: { onClose(): void }) {
             {decks.some((d) => d.enabled && d.selection !== 'full' && d.selection.length === 0) &&
               ' · one deck has nothing selected'}
           </span>
+          <button
+            className="btn" onClick={buildSet}
+            disabled={decks.filter((d) => d.enabled).length < 2 || busy}
+            title="Lay the records end to end as one continuous mix"
+          >Build a DJ set</button>
           <button className="btn" onClick={() => { stopPreview(); onClose() }}>Cancel</button>
           <button
             className="btn primary"

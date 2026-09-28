@@ -109,6 +109,14 @@ change the project and let it flow.
 
 ## Things that will bite you
 
+- **A slot is never longer than the material.** The DJ set gave every record
+  the same number of bars, so a short edit left silence in the middle of the
+  mix — and since the next record enters relative to where this one *ends*, the
+  hole landed exactly on the blend. `planSet` clamps the turn, and the blend
+  with it.
+- **Crossfade at equal power.** Two uncorrelated records fading past each other
+  on straight lines are each at half level in the middle and sum about 3 dB
+  down. They meet at `Math.SQRT1_2`.
 - **Score with multiplication when a factor can veto.** Mashup compatibility
   added tempo and key, so a perfect key rescued a 30% stretch and called it
   workable. Where one factor makes the whole thing unusable on its own, it has
